@@ -5,9 +5,9 @@ import android.util.Log
 
 /**
  * Manages a ring buffer of OpenGL ES 2.0 Framebuffer Objects (FBOs) and 2D textures
- * to store historical frames for temporal differential motion extraction.
+ * to store historical frames for temporal differential null baseline displacement extraction.
  */
-class FboRingBuffer(private val capacity: Int = 8) {
+class FboRingBuffer(private val capacity: Int = 12) {
 
     companion object {
         private const val TAG = "FboRingBuffer"

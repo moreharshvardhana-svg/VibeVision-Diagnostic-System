@@ -1,13 +1,17 @@
 package com.vibevision.app.gl
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.SurfaceTexture
 import android.opengl.GLSurfaceView
 import android.util.AttributeSet
+import android.view.Surface
+import com.vibevision.app.media.VideoRecorder
 import com.vibevision.app.model.DisplayMode
 
 /**
- * Custom GLSurfaceView configured with OpenGL ES 2.0 and event-driven rendering.
+ * Custom GLSurfaceView configured with OpenGL ES 2.0 and event-driven rendering
+ * for the Differential Null Baseline Engine.
  */
 class GLVibeSurfaceView @JvmOverloads constructor(
     context: Context,
@@ -18,7 +22,6 @@ class GLVibeSurfaceView @JvmOverloads constructor(
 
     init {
         setEGLContextClientVersion(2)
-        // Preserve EGL context on pause for instant resume
         preserveEGLContextOnPause = true
     }
 
@@ -53,6 +56,18 @@ class GLVibeSurfaceView @JvmOverloads constructor(
 
     fun notifyCameraResolution(width: Int, height: Int) {
         vibeRenderer?.setCameraPreviewSize(width, height)
+    }
+
+    fun requestSnapshot(callback: (Bitmap) -> Unit) {
+        vibeRenderer?.requestSnapshot(callback)
+    }
+
+    fun startRecording(recorder: VideoRecorder, surface: Surface, width: Int, height: Int) {
+        vibeRenderer?.startRecording(recorder, surface, width, height)
+    }
+
+    fun stopRecording() {
+        vibeRenderer?.stopRecording()
     }
 
     fun releaseRenderer() {

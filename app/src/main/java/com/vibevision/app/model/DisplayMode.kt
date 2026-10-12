@@ -1,7 +1,8 @@
 package com.vibevision.app.model
 
 /**
- * Optical motion visualization modes supported by the OpenGL ES fragment shader.
+ * Optical vibration visualization modes supported by the Differential Null Baseline Engine
+ * and Sub-Pixel Motion Amplifier shader.
  */
 enum class DisplayMode(
     val shaderModeId: Int,
@@ -9,22 +10,28 @@ enum class DisplayMode(
     val shortName: String,
     val description: String
 ) {
-    POSY_GRAY(
+    DIFFERENTIAL_NULL(
         shaderModeId = 0,
-        title = "Posy 50% Neutral Gray",
-        shortName = "Posy Gray",
-        description = "Bidirectional motion extraction around 50% gray baseline"
+        title = "Differential Null Baseline",
+        shortName = "Null Baseline",
+        description = "Calibrated 50% neutral gray differential baseline for bidirectional displacement"
     ),
-    HEATMAP(
+    SPECTRAL_HEATMAP(
         shaderModeId = 1,
-        title = "High-Contrast Turbo Heatmap",
-        shortName = "Heatmap",
-        description = "Vibration amplitude mapped onto high-contrast Turbo colormap"
+        title = "Spectral Turbo Heatmap",
+        shortName = "Spectral Heatmap",
+        description = "Color-mapped absolute motion gradients across high-contrast spectrum"
     ),
-    RAW_FEED(
+    DYNAMIC_EDGE_ACCENT(
         shaderModeId = 2,
-        title = "Raw Optical Stream",
+        title = "Dynamic Edge Accent",
+        shortName = "Edge Accent",
+        description = "Darkened raw background with glowing motion fringes"
+    ),
+    RAW_OPTICAL_FEED(
+        shaderModeId = 3,
+        title = "Raw Optical Feed",
         shortName = "Raw Feed",
-        description = "Direct unamplified camera sensor passthrough"
+        description = "Unprocessed inspection view direct from sensor"
     )
 }

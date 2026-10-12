@@ -4,50 +4,43 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CameraAlt
-import androidx.compose.material.icons.filled.CenterFocusStrong
-import androidx.compose.material.icons.filled.FlashOn
-import androidx.compose.material.icons.filled.FlipCameraAndroid
 import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -55,36 +48,35 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import com.vibevision.app.camera.CameraManager
 import com.vibevision.app.camera.VibrationAnalyzer
 import com.vibevision.app.gl.GLVibeSurfaceView
+import com.vibevision.app.media.SnapshotManager
+import com.vibevision.app.media.VideoRecorder
 import com.vibevision.app.model.DiagnosticState
-import com.vibevision.app.model.DisplayMode
-import com.vibevision.app.ui.components.ControlsOverlay
-import com.vibevision.app.ui.components.ModeSelector
+import com.vibevision.app.ui.components.BottomCaptureBar
 import com.vibevision.app.ui.components.ReticleOverlay
-import com.vibevision.app.ui.components.TelemetryBadge
-import com.vibevision.app.ui.theme.VibeAmber
+import com.vibevision.app.ui.components.SettingsBottomSheet
+import com.vibevision.app.ui.components.TopHudBar
 import com.vibevision.app.ui.theme.VibeBackground
 import com.vibevision.app.ui.theme.VibeBorder
 import com.vibevision.app.ui.theme.VibeCyan
 import com.vibevision.app.ui.theme.VibeSurface
-import com.vibevision.app.ui.theme.VibeSurfaceElevated
-import com.vibevision.app.ui.theme.VibeTextMuted
 import com.vibevision.app.ui.theme.VibeTextPrimary
 import com.vibevision.app.ui.theme.VibeTextSecondary
+import kotlinx.coroutines.launch
 
 /**
- * Main application screen composing real-time GLSurfaceView,
- * CameraX pipeline, and dark industrial HUD controls.
+ * Main application screen composing the clean inspection viewport,
+ * top telemetry HUD, bottom capture controls, and settings bottom sheet.
  */
 @Composable
 fun VibeVisionScreen() {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val scope = rememberCoroutineScope()
 
-    // Permission state
+    // Permissions handling
     var hasCameraPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(
@@ -94,32 +86,50 @@ fun VibeVisionScreen() {
         )
     }
 
-    val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        hasCameraPermission = granted
+    val permissionsLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        hasCameraPermission = permissions[Manifest.permission.CAMERA] ?: hasCameraPermission
     }
 
     LaunchedEffect(Unit) {
         if (!hasCameraPermission) {
-            permissionLauncher.launch(Manifest.permission.CAMERA)
+            permissionsLauncher.launch(
+                arrayOf(
+                    Manifest.permission.CAMERA,
+                    Manifest.permission.RECORD_AUDIO
+                )
+            )
         }
     }
 
     if (!hasCameraPermission) {
         CameraPermissionScreen(onRequestPermission = {
-            permissionLauncher.launch(Manifest.permission.CAMERA)
+            permissionsLauncher.launch(
+                arrayOf(
+                    Manifest.permission.CAMERA,
+                    Manifest.permission.RECORD_AUDIO
+                )
+            )
         })
         return
     }
 
-    // Telemetry & UI State
+    // Telemetry & Engineering State
     var diagnosticState by remember { mutableStateOf(DiagnosticState()) }
     var glSurfaceViewRef by remember { mutableStateOf<GLVibeSurfaceView?>(null) }
     var cameraManagerRef by remember { mutableStateOf<CameraManager?>(null) }
     var isCalibrated by remember { mutableStateOf(false) }
 
-    // Vibration Analyzer instance
+    // Video Recorder instance
+    val videoRecorder = remember { VideoRecorder(context) }
+    val recordDurationSeconds by videoRecorder.recordingDurationSeconds.collectAsState()
+
+    LaunchedEffect(recordDurationSeconds) {
+        diagnosticState = diagnosticState.copy(recordingDurationSeconds = recordDurationSeconds)
+    }
+
+    // Vibration Signal Analyzer instance
     val vibrationAnalyzer = remember {
         VibrationAnalyzer(
             onDiagnosticUpdate = { vibrationIndex, isAnomaly, status ->
@@ -135,13 +145,18 @@ fun VibeVisionScreen() {
         }
     }
 
-    // Camera Manager instance
+    // Locked Rear Camera Manager instance
+    var cameraResolutionWidth by remember { mutableStateOf(1920) }
+    var cameraResolutionHeight by remember { mutableStateOf(1080) }
+
     val cameraManager = remember {
         CameraManager(
             context = context,
             lifecycleOwner = lifecycleOwner,
             vibrationAnalyzer = vibrationAnalyzer,
             onResolutionConfigured = { w, h ->
+                cameraResolutionWidth = w
+                cameraResolutionHeight = h
                 glSurfaceViewRef?.notifyCameraResolution(w, h)
             },
             onTorchAvailabilityChanged = { available ->
@@ -165,7 +180,7 @@ fun VibeVisionScreen() {
             .background(VibeBackground)
     ) {
         // -------------------------------------------------------------
-        // 1. Fullscreen OpenGL ES 2.0 SurfaceView
+        // 1. Fullscreen OpenGL ES 2.0 Sub-Pixel Motion Viewport
         // -------------------------------------------------------------
         AndroidView(
             factory = { ctx ->
@@ -199,147 +214,67 @@ fun VibeVisionScreen() {
         )
 
         // -------------------------------------------------------------
-        // 2. Optical Reticle Crosshairs (Toggleable)
+        // 2. Optical Reticle Crosshairs (Toggleable via Top HUD)
         // -------------------------------------------------------------
         if (diagnosticState.showReticle) {
             ReticleOverlay(isAnomaly = diagnosticState.isAnomaly)
         }
 
         // -------------------------------------------------------------
-        // 3. Industrial HUD Layer (Header & Telemetry Badge)
+        // 3. Clean Inspection HUD Layer
         // -------------------------------------------------------------
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
-                .padding(horizontal = 14.dp, vertical = 8.dp),
+                .navigationBarsPadding(),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // Top Section: Title Bar & Live Telemetry
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                // Top App Bar
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(VibeSurface.copy(alpha = 0.90f))
-                        .border(1.dp, VibeBorder, RoundedCornerShape(10.dp))
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .clip(CircleShape)
-                                .background(VibeCyan)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column {
-                            Text(
-                                text = "VIBEVISION",
-                                color = VibeTextPrimary,
-                                fontSize = 15.sp,
-                                fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 1.5.sp
-                            )
-                            Text(
-                                text = "OPTICAL VIBRATION DIAGNOSTICS",
-                                color = VibeCyan,
-                                fontSize = 8.sp,
-                                fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.Medium,
-                                letterSpacing = 0.8.sp
-                            )
-                        }
-                    }
-
-                    // Action Icons: Reticle, Torch, Camera Flip
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        // Reticle Toggle
-                        IconButton(
-                            onClick = {
-                                diagnosticState = diagnosticState.copy(
-                                    showReticle = !diagnosticState.showReticle
-                                )
-                            },
-                            modifier = Modifier.size(34.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.CenterFocusStrong,
-                                contentDescription = "Toggle Reticle",
-                                tint = if (diagnosticState.showReticle) VibeCyan else VibeTextMuted,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-
-                        // Torch Toggle
-                        if (diagnosticState.isTorchAvailable) {
-                            IconButton(
-                                onClick = {
-                                    val isNowOn = cameraManager.toggleTorch()
-                                    diagnosticState = diagnosticState.copy(isTorchEnabled = isNowOn)
-                                },
-                                modifier = Modifier.size(34.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.FlashOn,
-                                    contentDescription = "Toggle Torch",
-                                    tint = if (diagnosticState.isTorchEnabled) VibeAmber else VibeTextMuted,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                        }
-
-                        // Camera Flip
-                        IconButton(
-                            onClick = {
-                                cameraManager.toggleCamera()
-                                diagnosticState = diagnosticState.copy(
-                                    isFrontCamera = cameraManager.isFrontCamera,
-                                    isTorchEnabled = false
-                                )
-                            },
-                            modifier = Modifier.size(34.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.FlipCameraAndroid,
-                                contentDescription = "Flip Camera",
-                                tint = VibeTextSecondary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    }
-                }
-
-                // Telemetry Badge
-                TelemetryBadge(state = diagnosticState)
-
-                // Mode Selector
-                ModeSelector(
-                    selectedMode = diagnosticState.displayMode,
-                    onModeSelected = { newMode ->
-                        diagnosticState = diagnosticState.copy(displayMode = newMode)
-                        glSurfaceViewRef?.setDisplayMode(newMode)
-                    }
-                )
-            }
-
-            // Bottom Section: Sliders and Calibration Controls
-            ControlsOverlay(
-                gain = diagnosticState.gain,
-                onGainChanged = { newGain ->
-                    diagnosticState = diagnosticState.copy(gain = newGain)
-                    vibrationAnalyzer.gain = newGain
-                    glSurfaceViewRef?.setGain(newGain)
+            // Top HUD Bar: Live FPS, mode tag, REC timer, Torch & Settings icon
+            TopHudBar(
+                state = diagnosticState,
+                onOpenSettings = {
+                    diagnosticState = diagnosticState.copy(isSettingsOpen = true)
                 },
-                frameDelay = diagnosticState.delayFrames,
-                onFrameDelayChanged = { newDelay ->
-                    diagnosticState = diagnosticState.copy(delayFrames = newDelay)
-                    vibrationAnalyzer.frameDelay = newDelay
-                    glSurfaceViewRef?.setFrameDelay(newDelay)
+                onToggleTorch = {
+                    val isTorchOn = cameraManager.toggleTorch()
+                    diagnosticState = diagnosticState.copy(isTorchEnabled = isTorchOn)
+                },
+                onToggleReticle = {
+                    diagnosticState = diagnosticState.copy(showReticle = !diagnosticState.showReticle)
+                }
+            )
+
+            // Bottom Capture Controls Bar: Snapshot & Video Recording
+            BottomCaptureBar(
+                isRecording = diagnosticState.isRecordingVideo,
+                onSnapshotClicked = {
+                    glSurfaceViewRef?.requestSnapshot { bitmap ->
+                        scope.launch {
+                            SnapshotManager.saveSnapshot(context, bitmap) {}
+                        }
+                    }
+                },
+                onToggleRecording = {
+                    if (diagnosticState.isRecordingVideo) {
+                        // Stop recording
+                        glSurfaceViewRef?.stopRecording()
+                        videoRecorder.stop {
+                            diagnosticState = diagnosticState.copy(isRecordingVideo = false)
+                        }
+                    } else {
+                        // Start recording
+                        val surface = videoRecorder.start(cameraResolutionWidth, cameraResolutionHeight)
+                        if (surface != null) {
+                            glSurfaceViewRef?.startRecording(
+                                recorder = videoRecorder,
+                                surface = surface,
+                                width = cameraResolutionWidth,
+                                height = cameraResolutionHeight
+                            )
+                            diagnosticState = diagnosticState.copy(isRecordingVideo = true)
+                        }
+                    }
                 },
                 onCalibrateBaseline = {
                     vibrationAnalyzer.calibrateBaseline()
@@ -351,8 +286,37 @@ fun VibeVisionScreen() {
                     diagnosticState = diagnosticState.copy(baselineOffset = 0.0f)
                     isCalibrated = false
                 },
-                isCalibrated = isCalibrated,
-                modifier = Modifier.padding(bottom = 8.dp)
+                isCalibrated = isCalibrated
+            )
+        }
+
+        // -------------------------------------------------------------
+        // 4. Settings Modal Bottom Sheet (Sections A & B)
+        // -------------------------------------------------------------
+        if (diagnosticState.isSettingsOpen) {
+            SettingsBottomSheet(
+                state = diagnosticState,
+                onDismissRequest = {
+                    diagnosticState = diagnosticState.copy(isSettingsOpen = false)
+                },
+                onModeSelected = { newMode ->
+                    diagnosticState = diagnosticState.copy(displayMode = newMode)
+                    glSurfaceViewRef?.setDisplayMode(newMode)
+                },
+                onGainChanged = { newGain ->
+                    diagnosticState = diagnosticState.copy(gain = newGain)
+                    vibrationAnalyzer.gain = newGain
+                    glSurfaceViewRef?.setGain(newGain)
+                },
+                onFrameDelayChanged = { newDelay ->
+                    diagnosticState = diagnosticState.copy(delayFrames = newDelay)
+                    vibrationAnalyzer.frameDelay = newDelay
+                    glSurfaceViewRef?.setFrameDelay(newDelay)
+                },
+                onTarget60FpsToggled = { enabled ->
+                    diagnosticState = diagnosticState.copy(target60Fps = enabled)
+                    cameraManager.setTarget60FpsPreference(enabled)
+                }
             )
         }
     }
@@ -407,7 +371,7 @@ private fun CameraPermissionScreen(
             )
 
             Text(
-                text = "Camera sensor access is required to perform high-frequency optical motion extraction and vibration diagnostics.",
+                text = "Rear camera access is required to perform high-frequency optical motion extraction and physical predictive maintenance diagnostics.",
                 color = VibeTextSecondary,
                 fontSize = 13.sp,
                 textAlign = TextAlign.Center,
@@ -426,7 +390,7 @@ private fun CameraPermissionScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
-                    text = "INITIALIZE SENSOR",
+                    text = "INITIALIZE SENSOR SUITE",
                     fontSize = 13.sp,
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold

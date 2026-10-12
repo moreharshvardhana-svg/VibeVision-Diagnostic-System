@@ -1,7 +1,11 @@
 <resources>
     <string name="app_name">VibeVision</string>
-    <string name="camera_permission_required">Camera access is required for real-time optical vibration diagnostics.</string>
-    <string name="grant_permission">Grant Camera Permission</string>
+    <string name="camera_permission_required">Camera sensor access is required for optical vibrometry and physical predictive maintenance inspection.</string>
+    <string name="grant_permission">Initialize Sensor Suite</string>
     <string name="status_stable">NORMAL / STABLE</string>
     <string name="status_anomaly">VIBRATION ANOMALY DETECTED</string>
+    <string name="snapshot_saved">Snapshot saved to Gallery</string>
+    <string name="video_saved">Diagnostic recording saved to Gallery</string>
+    <string name="snapshot_failed">Failed to capture frame buffer</string>
+    <string name="recording_failed">Video recording initialization failed</string>
 </resources>

@@ -22,8 +22,8 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 /**
- * Manages CameraX lifecycle, targeting 60 FPS preview,
- * feeding OpenGL ES SurfaceTexture, and driving the VibrationAnalyzer pipeline.
+ * Manages back-camera hardware lifecycle strictly locked to DEFAULT_BACK_CAMERA,
+ * configuring continuous autofocus, auto-exposure stabilization, and target 60 FPS preview.
  */
 class CameraManager(
     private val context: Context,
@@ -46,7 +46,7 @@ class CameraManager(
     private var activeSurfaceTexture: SurfaceTexture? = null
     private var activeSurface: Surface? = null
 
-    var isFrontCamera: Boolean = false
+    var target60Fps: Boolean = true
         private set
 
     var isTorchEnabled: Boolean = false
@@ -69,6 +69,13 @@ class CameraManager(
         bindCamera()
     }
 
+    fun setTarget60FpsPreference(enabled: Boolean) {
+        if (target60Fps != enabled) {
+            target60Fps = enabled
+            bindCamera()
+        }
+    }
+
     @androidx.annotation.OptIn(ExperimentalCamera2Interop::class)
     fun bindCamera() {
         val provider = cameraProvider ?: return
@@ -77,21 +84,30 @@ class CameraManager(
         try {
             provider.unbindAll()
 
-            val cameraSelector = if (isFrontCamera) {
-                CameraSelector.DEFAULT_FRONT_CAMERA
-            } else {
-                CameraSelector.DEFAULT_BACK_CAMERA
-            }
+            // Hardware Constraint: Locked strictly to rear inspection camera
+            val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
 
-            // 1. Build Preview targeting 60 FPS if hardware supports it
+            // 1. Build Preview targeting 60 FPS and Continuous Autofocus
             val previewBuilder = Preview.Builder()
                 .setTargetResolution(Size(1920, 1080))
 
             val previewExtender = Camera2Interop.Extender(previewBuilder)
-            // Target high frame rates for optical vibration capture
+            
+            // Continuous autofocus for maximum optical inspection sharpness
+            previewExtender.setCaptureRequestOption(
+                CaptureRequest.CONTROL_AF_MODE,
+                CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE
+            )
+            previewExtender.setCaptureRequestOption(
+                CaptureRequest.CONTROL_MODE,
+                CaptureRequest.CONTROL_MODE_AUTO
+            )
+
+            // High-speed frame rate targeting
+            val fpsRange = if (target60Fps) Range(30, 60) else Range(30, 30)
             previewExtender.setCaptureRequestOption(
                 CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE,
-                Range(30, 60)
+                fpsRange
             )
 
             val newPreview = previewBuilder.build()
@@ -113,7 +129,7 @@ class CameraManager(
             }
             this.preview = newPreview
 
-            // 2. Build ImageAnalysis for Real-time Vibration Diagnostics
+            // 2. Build ImageAnalysis for Real-time Signal Processing
             val analysisBuilder = ImageAnalysis.Builder()
                 .setTargetResolution(Size(640, 480))
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
@@ -121,8 +137,12 @@ class CameraManager(
 
             val analysisExtender = Camera2Interop.Extender(analysisBuilder)
             analysisExtender.setCaptureRequestOption(
+                CaptureRequest.CONTROL_AF_MODE,
+                CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE
+            )
+            analysisExtender.setCaptureRequestOption(
                 CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE,
-                Range(30, 60)
+                fpsRange
             )
 
             val newAnalysis = analysisBuilder.build()
@@ -138,7 +158,6 @@ class CameraManager(
             )
             this.camera = boundCamera
 
-            // Check torch availability
             val hasFlash = boundCamera.cameraInfo.hasFlashUnit()
             onTorchAvailabilityChanged(hasFlash)
             if (hasFlash && isTorchEnabled) {
@@ -148,12 +167,6 @@ class CameraManager(
         } catch (e: Exception) {
             Log.e(TAG, "Camera binding error", e)
         }
-    }
-
-    fun toggleCamera() {
-        isFrontCamera = !isFrontCamera
-        isTorchEnabled = false
-        bindCamera()
     }
 
     fun toggleTorch(): Boolean {
@@ -169,7 +182,7 @@ class CameraManager(
         val cam = camera ?: return
         val factory = SurfaceOrientedMeteringPointFactory(viewWidth.toFloat(), viewHeight.toFloat())
         val point = factory.createPoint(x, y)
-        val action = FocusMeteringAction.Builder(point, FocusMeteringAction.FLAG_AF)
+        val action = FocusMeteringAction.Builder(point, FocusMeteringAction.FLAG_AF or FocusMeteringAction.FLAG_AE)
             .setAutoCancelDuration(3, java.util.concurrent.TimeUnit.SECONDS)
             .build()
         cam.cameraControl.startFocusAndMetering(action)

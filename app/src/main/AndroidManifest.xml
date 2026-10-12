@@ -1,9 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Camera Hardware & Permissions -->
+    <!-- Optical Vibrometry & Recording Permissions -->
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     
+    <!-- Scoped storage compatibility for legacy Android versions -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+
+    <!-- Industrial Hardware Feature Constraints: Back camera required -->
     <uses-feature
         android:name="android.hardware.camera"
         android:required="true" />
@@ -14,7 +21,7 @@
         android:name="android.hardware.camera.flash"
         android:required="false" />
 
-    <!-- OpenGL ES 2.0 Feature Flag -->
+    <!-- OpenGL ES 2.0 Sub-Pixel Motion Amplifier Feature Flag -->
     <uses-feature
         android:glEsVersion="0x00020000"
         android:required="true" />

@@ -7,7 +7,8 @@ import java.nio.ByteOrder
 import java.nio.FloatBuffer
 
 /**
- * OpenGL ES 2.0 Shader and Buffer utilities for real-time optical processing.
+ * OpenGL ES 2.0 Shader and Buffer utilities for the Differential Null Baseline Engine
+ * and Sub-Pixel Motion Amplifier.
  */
 object ShaderUtils {
     private const val TAG = "VibeShaderUtils"
@@ -97,7 +98,6 @@ object ShaderUtils {
             throw RuntimeException("Could not link program:\n$infoLog")
         }
 
-        // Shaders can be marked for deletion once attached & linked
         GLES20.glDeleteShader(vertexShader)
         GLES20.glDeleteShader(fragmentShader)
 
@@ -154,18 +154,22 @@ object ShaderUtils {
     """
 
     /**
-     * Posy Motion Extraction, Heatmap, and Raw Feed Fragment Shader.
+     * Sub-Pixel Motion Amplifier fragment shader supporting 4 industrial visualization modes:
+     * Mode 0: Differential Null Baseline (50% neutral gray baseline difference)
+     * Mode 1: Spectral Turbo Heatmap (Color-mapped absolute motion gradients)
+     * Mode 2: Dynamic Edge Accent (Darkened raw background with glowing motion fringes)
+     * Mode 3: Raw Optical Feed (Unprocessed inspection view)
      */
-    const val POSY_FRAGMENT_SHADER = """
+    const val MOTION_AMPLIFIER_FRAGMENT_SHADER = """
         precision mediump float;
         varying vec2 vTexCoord;
 
         uniform sampler2D uCurrentFrame;
         uniform sampler2D uDelayedFrame;
         uniform float uGain;
-        uniform int uDisplayMode; // 0 = Posy 50% Gray, 1 = Turbo Heatmap, 2 = Raw Camera Feed
+        uniform int uDisplayMode;
 
-        // Google's Turbo Colormap for smooth, vibrant optical vibration heatmaps
+        // Spectral Turbo colormap polynomial approximation
         vec3 turboColormap(float x) {
             x = clamp(x, 0.0, 1.0);
             const vec4 kRedVec4   = vec4(0.13572138, 4.61539260, -42.66032258, 132.13108234);
@@ -188,8 +192,8 @@ object ShaderUtils {
         void main() {
             vec4 current = texture2D(uCurrentFrame, vTexCoord);
 
-            if (uDisplayMode == 2) {
-                // Mode 2: Raw Camera Feed
+            if (uDisplayMode == 3) {
+                // Mode 3: Raw Optical Feed
                 gl_FragColor = current;
                 return;
             }
@@ -197,21 +201,28 @@ object ShaderUtils {
             vec4 delayed = texture2D(uDelayedFrame, vTexCoord);
 
             if (uDisplayMode == 0) {
-                // Mode 0: Posy 50% Neutral Gray baseline
-                // diff = (current.rgb - delayed.rgb) * uGain + vec3(0.5);
+                // Mode 0: Differential Null Baseline (50% neutral gray baseline difference)
                 vec3 diff = (current.rgb - delayed.rgb) * uGain + vec3(0.5);
                 gl_FragColor = vec4(clamp(diff, 0.0, 1.0), 1.0);
-            } else {
-                // Mode 1: High-contrast Heatmap (absolute difference mapped to Turbo colormap)
+            } else if (uDisplayMode == 1) {
+                // Mode 1: Spectral Turbo Heatmap (Color-mapped absolute motion gradients)
                 vec3 absDiff = abs(current.rgb - delayed.rgb) * uGain;
                 float motionMag = dot(absDiff, vec3(0.299, 0.587, 0.114));
                 motionMag = clamp(motionMag, 0.0, 1.0);
 
                 vec3 heatColor = turboColormap(motionMag);
-                // Blend subtle ambient scene detail for spatial orientation
                 float ambientLuma = dot(current.rgb, vec3(0.299, 0.587, 0.114)) * 0.15;
                 vec3 finalColor = heatColor + vec3(ambientLuma);
                 gl_FragColor = vec4(clamp(finalColor, 0.0, 1.0), 1.0);
+            } else {
+                // Mode 2: Dynamic Edge Accent (Darkened raw background with glowing motion fringes)
+                vec3 absDiff = abs(current.rgb - delayed.rgb) * uGain;
+                float motionMag = dot(absDiff, vec3(0.299, 0.587, 0.114));
+                // High-luminescence electric cyan fringe glow on moving/vibrating edges
+                vec3 fringeColor = vec3(0.0, 0.898, 1.0) * clamp(motionMag * 2.5, 0.0, 1.0);
+                // Attenuated raw background for spatial orientation
+                vec3 composite = current.rgb * 0.25 + fringeColor;
+                gl_FragColor = vec4(clamp(composite, 0.0, 1.0), 1.0);
             }
         }
     """

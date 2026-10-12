@@ -7,8 +7,8 @@ import kotlin.math.abs
 import kotlin.math.sqrt
 
 /**
- * CameraX ImageAnalysis analyzer that calculates the real-time Vibration Intensity Index (VII)
- * from sample pixel differences across configurable frame delay buffers.
+ * Real-time differential signal processing analyzer calculating the Vibration Intensity Index (VII)
+ * from spatial luminance differences across temporal frame buffers.
  */
 class VibrationAnalyzer(
     private val onDiagnosticUpdate: (vibrationIndex: Float, isAnomaly: Boolean, status: String) -> Unit
@@ -18,14 +18,14 @@ class VibrationAnalyzer(
         private const val GRID_ROWS = 32
         private const val GRID_COLS = 32
         private const val SAMPLE_COUNT = GRID_ROWS * GRID_COLS
-        private const val HISTORY_CAPACITY = 8
+        private const val HISTORY_CAPACITY = 12
     }
 
     @Volatile
-    var gain: Float = 10.0f
+    var gain: Float = 8.0f // Default 8.0x
 
     @Volatile
-    var frameDelay: Int = 2
+    var frameDelay: Int = 2 // Default 2 frames
 
     @Volatile
     var baselineOffset: Float = 0.0f
@@ -52,7 +52,7 @@ class VibrationAnalyzer(
             val width = image.width
             val height = image.height
 
-            // Focus sampling on central 80% region of the frame
+            // Sample central 80% region of interest for mechanical vibration
             val xMargin = (width * 0.1f).toInt()
             val yMargin = (height * 0.1f).toInt()
             val sampleWidth = width - 2 * xMargin
@@ -80,13 +80,13 @@ class VibrationAnalyzer(
                 }
             }
 
-            // Copy to history buffer
+            // Copy to circular history buffer
             val writeSlot = (historyIndex + 1) % HISTORY_CAPACITY
             System.arraycopy(currentSamples, 0, history[writeSlot], 0, SAMPLE_COUNT)
             historyIndex = writeSlot
             totalFramesProcessed++
 
-            // Calculate differences against delayed frame
+            // Calculate differences against delayed null frame
             val clampedDelay = frameDelay.coerceIn(1, HISTORY_CAPACITY - 1)
             val delayedSlot = if (totalFramesProcessed < clampedDelay) {
                 writeSlot
@@ -107,16 +107,15 @@ class VibrationAnalyzer(
             val rmsDiff = sqrt(sumSqDiff / SAMPLE_COUNT).toFloat()
             val madDiff = (sumAbsDiff / SAMPLE_COUNT).toFloat()
 
-            // Normalized Vibration Intensity Index (0.0 to 100.0)
-            // Blends RMS (sensitive to sharp spikes) and MAD (general optical energy)
+            // Sub-Pixel Vibration Intensity Index (0.0 to 100.0)
             val baseDiff = (rmsDiff * 0.7f + madDiff * 0.3f)
             val gainScaling = (gain / 5.0f).coerceAtLeast(0.5f)
             val rawIndex = (baseDiff * gainScaling).coerceIn(0.0f, 100.0f)
 
-            // Low-pass exponential moving average for stable instrumentation readout
+            // Low-pass exponential moving average for steady instrumentation telemetry
             smoothedIntensity = smoothedIntensity * 0.75f + rawIndex * 0.25f
 
-            // Baseline subtraction
+            // Differential null baseline subtraction
             val effectiveIndex = (smoothedIntensity - baselineOffset).coerceAtLeast(0.0f)
 
             val isAnomaly = effectiveIndex >= DiagnosticState.ANOMALY_THRESHOLD

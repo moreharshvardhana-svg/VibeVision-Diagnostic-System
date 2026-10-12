@@ -1,18 +1,29 @@
 package com.vibevision.app.gl
 
+import android.graphics.Bitmap
+import android.graphics.Matrix
 import android.graphics.SurfaceTexture
+import android.opengl.EGL14
+import android.opengl.EGLConfig
+import android.opengl.EGLExt
+import android.opengl.EGLSurface
 import android.opengl.GLES11Ext
 import android.opengl.GLES20
 import android.opengl.GLSurfaceView
 import android.util.Log
+import android.view.Surface
+import com.vibevision.app.media.VideoRecorder
+import com.vibevision.app.model.DiagnosticState
 import com.vibevision.app.model.DisplayMode
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.nio.FloatBuffer
-import javax.microedition.khronos.egl.EGLConfig
+import javax.microedition.khronos.egl.EGLConfig as EGLConfigKhronos
 import javax.microedition.khronos.opengles.GL10
 
 /**
- * Custom OpenGL ES 2.0 Renderer executing real-time Posy motion extraction,
- * FBO texture ring buffering, and Google Turbo colormap heatmap rendering.
+ * Custom OpenGL ES 2.0 Renderer executing real-time Differential Null Baseline Extraction,
+ * Sub-Pixel Motion Amplification, FBO texture ring buffering, and video/photo recording.
  */
 class VibeRenderer(
     private val surfaceView: GLSurfaceView,
@@ -22,24 +33,24 @@ class VibeRenderer(
 
     companion object {
         private const val TAG = "VibeRenderer"
-        private const val RING_BUFFER_CAPACITY = 8
+        private const val RING_BUFFER_CAPACITY = 12
     }
 
     // Dynamic processing parameters (thread-safe)
     @Volatile
-    var gain: Float = 10.0f
+    var gain: Float = 8.0f // Default 8.0x
         set(value) {
-            field = value.coerceIn(1.0f, 25.0f)
+            field = value.coerceIn(DiagnosticState.MIN_GAIN, DiagnosticState.MAX_GAIN)
         }
 
     @Volatile
-    var frameDelay: Int = 2
+    var frameDelay: Int = 2 // Default 2 frames
         set(value) {
-            field = value.coerceIn(1, 5)
+            field = value.coerceIn(DiagnosticState.MIN_DELAY, DiagnosticState.MAX_DELAY)
         }
 
     @Volatile
-    var displayMode: DisplayMode = DisplayMode.POSY_GRAY
+    var displayMode: DisplayMode = DisplayMode.DIFFERENTIAL_NULL
 
     // Viewport dimensions
     private var viewportWidth = 1920
@@ -62,25 +73,39 @@ class VibeRenderer(
     private var oesMatrixLoc = -1
     private var oesTextureLoc = -1
 
-    private var posyProgram = 0
-    private var posyPositionLoc = -1
-    private var posyTexCoordLoc = -1
-    private var posyCurrentLoc = -1
-    private var posyDelayedLoc = -1
-    private var posyGainLoc = -1
-    private var posyModeLoc = -1
+    private var amplifierProgram = 0
+    private var amplifierPositionLoc = -1
+    private var amplifierTexCoordLoc = -1
+    private var amplifierCurrentLoc = -1
+    private var amplifierDelayedLoc = -1
+    private var amplifierGainLoc = -1
+    private var amplifierModeLoc = -1
 
     // Quad geometry buffers
     private val quadVertexBuffer: FloatBuffer = ShaderUtils.getQuadVertexBuffer()
     private val quadTexCoordBuffer: FloatBuffer = ShaderUtils.getQuadTexCoordBuffer()
-    private val quadTexCoordFlippedBuffer: FloatBuffer = ShaderUtils.getQuadTexCoordFlippedBuffer()
 
     // FPS estimation
     private var lastFrameTimeNs = 0L
     private var smoothedFps = 60.0f
     private var fpsUpdateCounter = 0
 
-    override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
+    // Snapshot request handling
+    @Volatile
+    private var pendingSnapshotCallback: ((Bitmap) -> Unit)? = null
+
+    // Video recording handling via EGL14 Surface
+    private var videoRecorder: VideoRecorder? = null
+    private var recordEglSurface: EGLSurface = EGL14.EGL_NO_SURFACE
+    private var recordWidth = 1920
+    private var recordHeight = 1080
+    @Volatile
+    private var shouldStartRecording = false
+    @Volatile
+    private var shouldStopRecording = false
+    private var pendingRecordSurface: Surface? = null
+
+    override fun onSurfaceCreated(gl: GL10?, config: EGLConfigKhronos?) {
         Log.i(TAG, "onSurfaceCreated: Initializing OpenGL ES 2.0 context")
 
         GLES20.glClearColor(0.043f, 0.055f, 0.078f, 1.0f) // #0B0E14
@@ -96,7 +121,7 @@ class VibeRenderer(
         viewportWidth = width
         viewportHeight = height
 
-        // Initialize FBO ring buffer textures to match incoming frame resolution
+        // Initialize FBO ring buffer textures
         ringBuffer.setup(width, height)
     }
 
@@ -128,7 +153,6 @@ class VibeRenderer(
         lastFrameTimeNs = now
 
         if (!updateSurface && !ringBuffer.isReady) {
-            // Nothing to render yet
             GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
             return
         }
@@ -144,25 +168,20 @@ class VibeRenderer(
 
             GLES20.glUseProgram(oesProgram)
 
-            // Setup vertex coordinates
             quadVertexBuffer.position(0)
             GLES20.glEnableVertexAttribArray(oesPositionLoc)
             GLES20.glVertexAttribPointer(oesPositionLoc, 2, GLES20.GL_FLOAT, false, 0, quadVertexBuffer)
 
-            // Setup texture UV coordinates
             quadTexCoordBuffer.position(0)
             GLES20.glEnableVertexAttribArray(oesTexCoordLoc)
             GLES20.glVertexAttribPointer(oesTexCoordLoc, 2, GLES20.GL_FLOAT, false, 0, quadTexCoordBuffer)
 
-            // Pass camera transformation matrix
             GLES20.glUniformMatrix4fv(oesMatrixLoc, 1, false, stMatrix, 0)
 
-            // Bind Camera OES texture
             GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
             GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, oesTextureId)
             GLES20.glUniform1i(oesTextureLoc, 0)
 
-            // Draw fullscreen quad
             GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
 
             GLES20.glDisableVertexAttribArray(oesPositionLoc)
@@ -170,45 +189,174 @@ class VibeRenderer(
         }
 
         // -------------------------------------------------------------
-        // PASS 2: Posy Motion Extraction / Heatmap to Screen Framebuffer
+        // PASS 2: Sub-Pixel Motion Amplifier to Screen Framebuffer
         // -------------------------------------------------------------
         GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0)
         GLES20.glViewport(0, 0, viewportWidth, viewportHeight)
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
 
-        GLES20.glUseProgram(posyProgram)
+        renderAmplifierPass()
 
-        // Setup vertex geometry
+        // -------------------------------------------------------------
+        // Check for Snapshot Capture Request
+        // -------------------------------------------------------------
+        val snapshotCb = pendingSnapshotCallback
+        if (snapshotCb != null) {
+            pendingSnapshotCallback = null
+            captureFramePixels(snapshotCb)
+        }
+
+        // -------------------------------------------------------------
+        // Video Recording Render Pass via EGL14
+        // -------------------------------------------------------------
+        handleVideoRecordingPass(now)
+    }
+
+    private fun renderAmplifierPass() {
+        GLES20.glUseProgram(amplifierProgram)
+
         quadVertexBuffer.position(0)
-        GLES20.glEnableVertexAttribArray(posyPositionLoc)
-        GLES20.glVertexAttribPointer(posyPositionLoc, 2, GLES20.GL_FLOAT, false, 0, quadVertexBuffer)
+        GLES20.glEnableVertexAttribArray(amplifierPositionLoc)
+        GLES20.glVertexAttribPointer(amplifierPositionLoc, 2, GLES20.GL_FLOAT, false, 0, quadVertexBuffer)
 
-        // Setup UV coordinates (standard quad)
         quadTexCoordBuffer.position(0)
-        GLES20.glEnableVertexAttribArray(posyTexCoordLoc)
-        GLES20.glVertexAttribPointer(posyTexCoordLoc, 2, GLES20.GL_FLOAT, false, 0, quadTexCoordBuffer)
+        GLES20.glEnableVertexAttribArray(amplifierTexCoordLoc)
+        GLES20.glVertexAttribPointer(amplifierTexCoordLoc, 2, GLES20.GL_FLOAT, false, 0, quadTexCoordBuffer)
 
         // Bind Current Frame (unit 0)
         val currentTexId = ringBuffer.getCurrentTextureId()
         GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, currentTexId)
-        GLES20.glUniform1i(posyCurrentLoc, 0)
+        GLES20.glUniform1i(amplifierCurrentLoc, 0)
 
         // Bind Delayed Frame (unit 1)
         val delayedTexId = ringBuffer.getDelayedTextureId(frameDelay)
         GLES20.glActiveTexture(GLES20.GL_TEXTURE1)
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, delayedTexId)
-        GLES20.glUniform1i(posyDelayedLoc, 1)
+        GLES20.glUniform1i(amplifierDelayedLoc, 1)
 
-        // Pass Uniforms
-        GLES20.glUniform1f(posyGainLoc, gain)
-        GLES20.glUniform1i(posyModeLoc, displayMode.shaderModeId)
+        GLES20.glUniform1f(amplifierGainLoc, gain)
+        GLES20.glUniform1i(amplifierModeLoc, displayMode.shaderModeId)
 
-        // Draw fullscreen quad
         GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
 
-        GLES20.glDisableVertexAttribArray(posyPositionLoc)
-        GLES20.glDisableVertexAttribArray(posyTexCoordLoc)
+        GLES20.glDisableVertexAttribArray(amplifierPositionLoc)
+        GLES20.glDisableVertexAttribArray(amplifierTexCoordLoc)
+    }
+
+    private fun captureFramePixels(callback: (Bitmap) -> Unit) {
+        try {
+            val pixelBuffer = ByteBuffer.allocateDirect(viewportWidth * viewportHeight * 4).apply {
+                order(ByteOrder.nativeOrder())
+                position(0)
+            }
+            GLES20.glReadPixels(
+                0, 0, viewportWidth, viewportHeight,
+                GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, pixelBuffer
+            )
+
+            val rawBitmap = Bitmap.createBitmap(viewportWidth, viewportHeight, Bitmap.Config.ARGB_8888)
+            pixelBuffer.position(0)
+            rawBitmap.copyPixelsFromBuffer(pixelBuffer)
+
+            // Flip vertically because OpenGL coordinates start at bottom-left
+            val flipMatrix = Matrix().apply { postScale(1.0f, -1.0f) }
+            val finalBitmap = Bitmap.createBitmap(
+                rawBitmap, 0, 0, viewportWidth, viewportHeight, flipMatrix, true
+            )
+            rawBitmap.recycle()
+
+            callback(finalBitmap)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in glReadPixels snapshot", e)
+        }
+    }
+
+    private fun handleVideoRecordingPass(nowNs: Long) {
+        val recorder = videoRecorder ?: return
+
+        val eglDisplay = EGL14.eglGetCurrentDisplay()
+        val eglContext = EGL14.eglGetCurrentContext()
+
+        // Initialize recording EGL surface if requested
+        if (shouldStartRecording) {
+            shouldStartRecording = false
+            val surface = pendingRecordSurface
+            if (surface != null && surface.isValid) {
+                try {
+                    val configs = arrayOfNulls<EGLConfig>(1)
+                    val numConfigs = IntArray(1)
+                    val attribList = intArrayOf(
+                        EGL14.EGL_RENDERABLE_TYPE, EGL14.EGL_OPENGL_ES2_BIT,
+                        EGL14.EGL_RED_SIZE, 8,
+                        EGL14.EGL_GREEN_SIZE, 8,
+                        EGL14.EGL_BLUE_SIZE, 8,
+                        EGL14.EGL_ALPHA_SIZE, 8,
+                        EGL14.EGL_NONE
+                    )
+                    EGL14.eglChooseConfig(eglDisplay, attribList, 0, configs, 0, 1, numConfigs, 0)
+                    val surfaceAttribs = intArrayOf(EGL14.EGL_NONE)
+                    recordEglSurface = EGL14.eglCreateWindowSurface(
+                        eglDisplay, configs[0], surface, surfaceAttribs, 0
+                    )
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to create record EGL surface", e)
+                }
+            }
+        }
+
+        // Render to encoder EGL surface
+        if (recorder.isRecording && recordEglSurface != EGL14.EGL_NO_SURFACE) {
+            try {
+                val displayEglSurface = EGL14.eglGetCurrentSurface(EGL14.EGL_DRAW)
+
+                EGL14.eglMakeCurrent(eglDisplay, recordEglSurface, recordEglSurface, eglContext)
+                GLES20.glViewport(0, 0, recordWidth, recordHeight)
+                GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
+
+                renderAmplifierPass()
+
+                EGLExt.eglPresentationTimeANDROID(eglDisplay, recordEglSurface, nowNs)
+                EGL14.eglSwapBuffers(eglDisplay, recordEglSurface)
+
+                // Restore display EGL surface
+                EGL14.eglMakeCurrent(eglDisplay, displayEglSurface, displayEglSurface, eglContext)
+                GLES20.glViewport(0, 0, viewportWidth, viewportHeight)
+
+                recorder.drainEncoder(false)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error rendering to encoder surface", e)
+            }
+        }
+
+        // Tear down recording EGL surface if requested
+        if (shouldStopRecording) {
+            shouldStopRecording = false
+            if (recordEglSurface != EGL14.EGL_NO_SURFACE) {
+                EGL14.eglDestroySurface(eglDisplay, recordEglSurface)
+                recordEglSurface = EGL14.EGL_NO_SURFACE
+            }
+            pendingRecordSurface = null
+        }
+    }
+
+    fun requestSnapshot(callback: (Bitmap) -> Unit) {
+        pendingSnapshotCallback = callback
+        surfaceView.requestRender()
+    }
+
+    fun startRecording(recorder: VideoRecorder, surface: Surface, width: Int, height: Int) {
+        this.videoRecorder = recorder
+        this.pendingRecordSurface = surface
+        this.recordWidth = width
+        this.recordHeight = height
+        this.shouldStartRecording = true
+        surfaceView.requestRender()
+    }
+
+    fun stopRecording() {
+        this.shouldStopRecording = true
+        surfaceView.requestRender()
     }
 
     override fun onFrameAvailable(surfaceTexture: SurfaceTexture?) {
@@ -218,9 +366,6 @@ class VibeRenderer(
         surfaceView.requestRender()
     }
 
-    /**
-     * Called when Camera resolution is negotiated by CameraX.
-     */
     fun setCameraPreviewSize(width: Int, height: Int) {
         surfaceView.queueEvent {
             Log.i(TAG, "Configuring FBO Ring Buffer for camera size: ${width}x${height}")
@@ -239,17 +384,17 @@ class VibeRenderer(
         oesMatrixLoc = GLES20.glGetUniformLocation(oesProgram, "uSTMatrix")
         oesTextureLoc = GLES20.glGetUniformLocation(oesProgram, "uOesTexture")
 
-        // 2. Posy Motion Extraction & Diagnostic program
-        posyProgram = ShaderUtils.createProgram(
+        // 2. Sub-Pixel Motion Amplifier program
+        amplifierProgram = ShaderUtils.createProgram(
             ShaderUtils.DISPLAY_VERTEX_SHADER,
-            ShaderUtils.POSY_FRAGMENT_SHADER
+            ShaderUtils.MOTION_AMPLIFIER_FRAGMENT_SHADER
         )
-        posyPositionLoc = GLES20.glGetAttribLocation(posyProgram, "aPosition")
-        posyTexCoordLoc = GLES20.glGetAttribLocation(posyProgram, "aTexCoord")
-        posyCurrentLoc = GLES20.glGetUniformLocation(posyProgram, "uCurrentFrame")
-        posyDelayedLoc = GLES20.glGetUniformLocation(posyProgram, "uDelayedFrame")
-        posyGainLoc = GLES20.glGetUniformLocation(posyProgram, "uGain")
-        posyModeLoc = GLES20.glGetUniformLocation(posyProgram, "uDisplayMode")
+        amplifierPositionLoc = GLES20.glGetAttribLocation(amplifierProgram, "aPosition")
+        amplifierTexCoordLoc = GLES20.glGetAttribLocation(amplifierProgram, "aTexCoord")
+        amplifierCurrentLoc = GLES20.glGetUniformLocation(amplifierProgram, "uCurrentFrame")
+        amplifierDelayedLoc = GLES20.glGetUniformLocation(amplifierProgram, "uDelayedFrame")
+        amplifierGainLoc = GLES20.glGetUniformLocation(amplifierProgram, "uGain")
+        amplifierModeLoc = GLES20.glGetUniformLocation(amplifierProgram, "uDisplayMode")
     }
 
     private fun initOesTexture() {
@@ -267,7 +412,6 @@ class VibeRenderer(
         st.setOnFrameAvailableListener(this)
         surfaceTexture = st
 
-        // Notify camera provider on main thread
         surfaceView.post {
             onSurfaceTextureReady(st)
         }
@@ -277,5 +421,10 @@ class VibeRenderer(
         surfaceTexture?.release()
         surfaceTexture = null
         ringBuffer.release()
+        if (recordEglSurface != EGL14.EGL_NO_SURFACE) {
+            val eglDisplay = EGL14.eglGetCurrentDisplay()
+            EGL14.eglDestroySurface(eglDisplay, recordEglSurface)
+            recordEglSurface = EGL14.EGL_NO_SURFACE
+        }
     }
 }
