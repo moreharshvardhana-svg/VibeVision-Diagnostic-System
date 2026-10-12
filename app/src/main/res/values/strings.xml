@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">VibeVision</string>
+    <string name="camera_permission_required">Camera access is required for real-time optical vibration diagnostics.</string>
+    <string name="grant_permission">Grant Camera Permission</string>
+    <string name="status_stable">NORMAL / STABLE</string>
+    <string name="status_anomaly">VIBRATION ANOMALY DETECTED</string>
+</resources>
