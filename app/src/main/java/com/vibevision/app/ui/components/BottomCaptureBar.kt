@@ -137,7 +137,7 @@ fun BottomCaptureBar(
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertAlignment
+            verticalAlignment = Alignment.CenterVertically
         ) {
             // Snapshot Button (White Shutter)
             Box(
