@@ -1,7 +1,8 @@
 # VibeVision: Non-Contact Optical Vibration & Diagnostic System
 
 **Mobile Computer Vision & Industrial Predictive Maintenance Platform**  
-**Build Version:** v1.0.0 (Field Evaluation Build)
+**Build Version:** `v1.0.0 (Field Evaluation Build)`  
+**Deliverable Artifact:** [`VibeVision-v1.0.0-Field-Preview.apk`](./VibeVision-v1.0.0-Field-Preview.apk) (20 MB)
 
 ---
 
@@ -91,10 +92,29 @@ void main() {
 
 ---
 
+## 📦 Installation Instructions (Compiled APK)
+
+### Method 1: Direct ADB Installation (Recommended for Field Engineers)
+Connect your Android device (Android 7.0 / API 24 or newer) with USB debugging enabled and run:
+
+```bash
+adb install -r VibeVision-v1.0.0-Field-Preview.apk
+```
+
+### Method 2: On-Device Side-Loading
+1. Transfer `VibeVision-v1.0.0-Field-Preview.apk` to your device (via USB, Google Drive, or local storage).
+2. Open your device's **Files / File Manager** application and tap `VibeVision-v1.0.0-Field-Preview.apk`.
+3. If prompted, allow installation from unknown sources for your file manager.
+4. Tap **Install** and launch **VibeVision**.
+5. Grant Camera and Audio permissions upon first launch to initialize the sensor suite.
+
+---
+
 ## 🛠️ Architectural Components
 
 ```
 VibeVision_Prototype_Field_Project/
+├── VibeVision-v1.0.0-Field-Preview.apk       # Ready-to-install debug evaluation APK (20 MB)
 ├── app/
 │   ├── build.gradle.kts                     # App module dependencies (CameraX, Compose, Coroutines)
 │   ├── proguard-rules.pro                   # R8 ProGuard rules
