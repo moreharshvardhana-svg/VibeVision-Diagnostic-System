@@ -58,6 +58,12 @@ class VideoRecorder(private val context: Context) {
     var isRecording = false
         private set
 
+    var configuredWidth: Int = 0
+        private set
+
+    var configuredHeight: Int = 0
+        private set
+
     private val _recordingDurationSeconds = MutableStateFlow(0L)
     val recordingDurationSeconds: StateFlow<Long> = _recordingDurationSeconds.asStateFlow()
 
@@ -73,6 +79,9 @@ class VideoRecorder(private val context: Context) {
         // Ensure width and height are even numbers for H.264
         val alignedWidth = (width / 16) * 16
         val alignedHeight = (height / 16) * 16
+
+        this.configuredWidth = alignedWidth
+        this.configuredHeight = alignedHeight
 
         try {
             val format = MediaFormat.createVideoFormat(MIME_TYPE, alignedWidth, alignedHeight).apply {

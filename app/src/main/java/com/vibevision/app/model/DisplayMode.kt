@@ -3,6 +3,8 @@ package com.vibevision.app.model
 /**
  * Optical vibration visualization modes supported by the Differential Null Baseline Engine
  * and Sub-Pixel Motion Amplifier shader.
+ *
+ * Mode 2 (FREEZE_FRAME) replaces the former Dynamic Edge Accent mode.
  */
 enum class DisplayMode(
     val shaderModeId: Int,
@@ -22,11 +24,11 @@ enum class DisplayMode(
         shortName = "Spectral Heatmap",
         description = "Color-mapped absolute motion gradients across high-contrast spectrum"
     ),
-    DYNAMIC_EDGE_ACCENT(
+    FREEZE_FRAME(
         shaderModeId = 2,
-        title = "Dynamic Edge Accent",
-        shortName = "Edge Accent",
-        description = "Darkened raw background with glowing motion fringes"
+        title = "Freeze-Frame Glow",
+        shortName = "Freeze-Frame",
+        description = "Pinned baseline reference frame with screen-blend S-curve motion glow composited over live feed"
     ),
     RAW_OPTICAL_FEED(
         shaderModeId = 3,

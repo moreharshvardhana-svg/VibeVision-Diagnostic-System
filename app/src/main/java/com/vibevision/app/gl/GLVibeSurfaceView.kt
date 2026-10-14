@@ -39,6 +39,12 @@ class GLVibeSurfaceView @JvmOverloads constructor(
         renderMode = RENDERMODE_WHEN_DIRTY
     }
 
+    val viewportWidth: Int
+        get() = vibeRenderer?.currentViewportWidth ?: width
+
+    val viewportHeight: Int
+        get() = vibeRenderer?.currentViewportHeight ?: height
+
     fun setGain(gain: Float) {
         vibeRenderer?.gain = gain
         requestRender()
@@ -72,5 +78,20 @@ class GLVibeSurfaceView @JvmOverloads constructor(
 
     fun releaseRenderer() {
         vibeRenderer?.release()
+    }
+
+    /**
+     * Captures the current live frame directly on the GPU and pins it as the static Freeze-Frame reference.
+     * Direct GPU texture copy ensures zero pixel format, flip, or aspect ratio mismatches.
+     */
+    fun captureAndSetFreezeFrame(callback: (() -> Unit)? = null) {
+        vibeRenderer?.captureFreezeFrame(callback)
+    }
+
+    /**
+     * Clears the freeze-frame reference, restoring rolling ring-buffer comparisons.
+     */
+    fun clearFreezeFrame() {
+        vibeRenderer?.clearFreezeFrame()
     }
 }

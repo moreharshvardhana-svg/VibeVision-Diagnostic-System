@@ -11,7 +11,19 @@ import kotlin.math.sqrt
  * from spatial luminance differences across temporal frame buffers.
  */
 class VibrationAnalyzer(
-    private val onDiagnosticUpdate: (vibrationIndex: Float, isAnomaly: Boolean, status: String) -> Unit
+    private val onDiagnosticUpdate: (
+        vibrationIndex: Float,
+        isAnomaly: Boolean,
+        status: String,
+        peakFrequencyHz: Float,
+        estimatedRpm: Float,
+        spectrumMagnitudes: FloatArray,
+        fftStatusTag: String,
+        isAliasDetected: Boolean,
+        severityZone: VibrationSeverityZone,
+        severityDiagnosis: String,
+        severityTag: String
+    ) -> Unit
 ) : ImageAnalysis.Analyzer {
 
     companion object {
@@ -20,6 +32,15 @@ class VibrationAnalyzer(
         private const val SAMPLE_COUNT = GRID_ROWS * GRID_COLS
         private const val HISTORY_CAPACITY = 12
     }
+
+    // On-device Optical FFT & RPM Engine
+    val fftEngine = OpticalFftEngine()
+
+    // ISO 10816-3 Vibration Severity Evaluator
+    val isoEvaluator = IsoSeverityEvaluator()
+
+    @Volatile
+    var currentFps: Float = 60.0f
 
     @Volatile
     var gain: Float = 8.0f // Default 8.0x
@@ -125,7 +146,29 @@ class VibrationAnalyzer(
                 DiagnosticState.STATUS_NORMAL
             }
 
-            onDiagnosticUpdate(effectiveIndex, isAnomaly, status)
+            // Route intensity scalar into thread-safe circular ring buffer and compute FFT
+            fftEngine.pushSample(rawIndex)
+            fftEngine.process(currentFps)
+
+            // Evaluate ISO 10816-3 Industrial Vibration Severity
+            val severityReport = isoEvaluator.evaluate(
+                peakMagnitude = if (fftEngine.isIdle) 0.0f else effectiveIndex,
+                peakHz = fftEngine.peakFrequencyHz
+            )
+
+            onDiagnosticUpdate(
+                effectiveIndex,
+                isAnomaly,
+                status,
+                fftEngine.peakFrequencyHz,
+                fftEngine.estimatedRpm,
+                fftEngine.snapshotMagnitudes,
+                fftEngine.statusTag,
+                fftEngine.isAliasDetected,
+                severityReport.zone,
+                severityReport.diagnosis,
+                severityReport.tag
+            )
 
         } catch (e: Exception) {
             e.printStackTrace()
@@ -140,9 +183,13 @@ class VibrationAnalyzer(
 
     fun calibrateBaseline() {
         baselineOffset = smoothedIntensity
+        fftEngine.reset()
+        isoEvaluator.reset()
     }
 
     fun resetBaseline() {
         baselineOffset = 0.0f
+        fftEngine.reset()
+        isoEvaluator.reset()
     }
 }

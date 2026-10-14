@@ -92,6 +92,16 @@ class FboRingBuffer(private val capacity: Int = 12) {
         return fboIds[writeIndex]
     }
 
+    val totalFrameCount: Long get() = frameCount
+
+    /**
+     * Returns the current (most recent) frame's GL FBO ID.
+     */
+    fun getCurrentFboId(): Int {
+        if (!isInitialized) return 0
+        return fboIds[writeIndex]
+    }
+
     /**
      * Returns the current (most recent) frame's GL_TEXTURE_2D ID.
      */

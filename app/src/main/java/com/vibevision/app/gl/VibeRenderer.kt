@@ -56,6 +56,13 @@ class VibeRenderer(
     private var viewportWidth = 1920
     private var viewportHeight = 1080
 
+    val currentViewportWidth: Int get() = viewportWidth
+    val currentViewportHeight: Int get() = viewportHeight
+
+    // Camera native resolution (separate from viewport — FBO always matches camera)
+    private var cameraWidth = 1920
+    private var cameraHeight = 1080
+
     // Camera texture & transformation
     private var oesTextureId = 0
     private var surfaceTexture: SurfaceTexture? = null
@@ -80,6 +87,8 @@ class VibeRenderer(
     private var amplifierDelayedLoc = -1
     private var amplifierGainLoc = -1
     private var amplifierModeLoc = -1
+    private var amplifierTexAspectLoc = -1
+    private var amplifierViewAspectLoc = -1
 
     // Quad geometry buffers
     private val quadVertexBuffer: FloatBuffer = ShaderUtils.getQuadVertexBuffer()
@@ -93,6 +102,15 @@ class VibeRenderer(
     // Snapshot request handling
     @Volatile
     private var pendingSnapshotCallback: ((Bitmap) -> Unit)? = null
+
+    // Freeze-Frame: static reference texture (Mode 2)
+    private var freezeTextureId = 0
+    @Volatile
+    private var hasFreezeFrame = false
+    @Volatile
+    private var shouldCaptureFreezeFrame = false
+    @Volatile
+    private var pendingFreezeCaptureCallback: (() -> Unit)? = null
 
     // Video recording handling via EGL14 Surface
     private var videoRecorder: VideoRecorder? = null
@@ -114,15 +132,20 @@ class VibeRenderer(
 
         initShaders()
         initOesTexture()
+        initFreezeTexture()
     }
 
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
         Log.i(TAG, "onSurfaceChanged: ${width}x${height}")
         viewportWidth = width
         viewportHeight = height
-
-        // Initialize FBO ring buffer textures
-        ringBuffer.setup(width, height)
+        // Note: FBO ring buffer is sized to the camera resolution, not the viewport.
+        // It is set up in setCameraPreviewSize() when the camera reports its resolution.
+        // We only resize here if no camera size has been set yet (safety fallback).
+        if (!ringBuffer.isReady) {
+            ringBuffer.setup(width, height)
+            updateFreezeTextureSize(width, height)
+        }
     }
 
     override fun onDrawFrame(gl: GL10?) {
@@ -189,6 +212,20 @@ class VibeRenderer(
         }
 
         // -------------------------------------------------------------
+        // Check for Freeze Frame Capture Request
+        // -------------------------------------------------------------
+        if (shouldCaptureFreezeFrame && ringBuffer.isReady && ringBuffer.totalFrameCount > 0L) {
+            shouldCaptureFreezeFrame = false
+            copyCurrentFrameToFreezeTexture()
+            hasFreezeFrame = true
+            val cb = pendingFreezeCaptureCallback
+            pendingFreezeCaptureCallback = null
+            if (cb != null) {
+                surfaceView.post(cb)
+            }
+        }
+
+        // -------------------------------------------------------------
         // PASS 2: Sub-Pixel Motion Amplifier to Screen Framebuffer
         // -------------------------------------------------------------
         GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0)
@@ -212,7 +249,7 @@ class VibeRenderer(
         handleVideoRecordingPass(now)
     }
 
-    private fun renderAmplifierPass() {
+    private fun renderAmplifierPass(targetWidth: Int = viewportWidth, targetHeight: Int = viewportHeight) {
         GLES20.glUseProgram(amplifierProgram)
 
         quadVertexBuffer.position(0)
@@ -229,14 +266,26 @@ class VibeRenderer(
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, currentTexId)
         GLES20.glUniform1i(amplifierCurrentLoc, 0)
 
-        // Bind Delayed Frame (unit 1)
-        val delayedTexId = ringBuffer.getDelayedTextureId(frameDelay)
-        GLES20.glActiveTexture(GLES20.GL_TEXTURE1)
-        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, delayedTexId)
+        // Bind Delayed Frame (unit 1) — or frozen static texture in FREEZE_FRAME mode
+        val isFreezeMode = displayMode == DisplayMode.FREEZE_FRAME && hasFreezeFrame
+        if (isFreezeMode) {
+            GLES20.glActiveTexture(GLES20.GL_TEXTURE1)
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, freezeTextureId)
+        } else {
+            val delayedTexId = ringBuffer.getDelayedTextureId(frameDelay)
+            GLES20.glActiveTexture(GLES20.GL_TEXTURE1)
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, delayedTexId)
+        }
         GLES20.glUniform1i(amplifierDelayedLoc, 1)
 
         GLES20.glUniform1f(amplifierGainLoc, gain)
         GLES20.glUniform1i(amplifierModeLoc, displayMode.shaderModeId)
+
+        // Aspect ratio uniforms for center-crop UV correction in the display vertex shader
+        val texAspect = cameraWidth.toFloat() / cameraHeight.toFloat()
+        val viewAspect = targetWidth.toFloat() / targetHeight.toFloat()
+        GLES20.glUniform1f(amplifierTexAspectLoc, texAspect)
+        GLES20.glUniform1f(amplifierViewAspectLoc, viewAspect)
 
         GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
 
@@ -314,7 +363,7 @@ class VibeRenderer(
                 GLES20.glViewport(0, 0, recordWidth, recordHeight)
                 GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
 
-                renderAmplifierPass()
+                renderAmplifierPass(recordWidth, recordHeight)
 
                 EGLExt.eglPresentationTimeANDROID(eglDisplay, recordEglSurface, nowNs)
                 EGL14.eglSwapBuffers(eglDisplay, recordEglSurface)
@@ -367,9 +416,12 @@ class VibeRenderer(
     }
 
     fun setCameraPreviewSize(width: Int, height: Int) {
+        cameraWidth = width
+        cameraHeight = height
         surfaceView.queueEvent {
             Log.i(TAG, "Configuring FBO Ring Buffer for camera size: ${width}x${height}")
             ringBuffer.setup(width, height)
+            updateFreezeTextureSize(width, height)
         }
     }
 
@@ -395,6 +447,8 @@ class VibeRenderer(
         amplifierDelayedLoc = GLES20.glGetUniformLocation(amplifierProgram, "uDelayedFrame")
         amplifierGainLoc = GLES20.glGetUniformLocation(amplifierProgram, "uGain")
         amplifierModeLoc = GLES20.glGetUniformLocation(amplifierProgram, "uDisplayMode")
+        amplifierTexAspectLoc = GLES20.glGetUniformLocation(amplifierProgram, "uTexAspect")
+        amplifierViewAspectLoc = GLES20.glGetUniformLocation(amplifierProgram, "uViewAspect")
     }
 
     private fun initOesTexture() {
@@ -421,10 +475,86 @@ class VibeRenderer(
         surfaceTexture?.release()
         surfaceTexture = null
         ringBuffer.release()
+        // Delete freeze-frame texture
+        if (freezeTextureId != 0) {
+            GLES20.glDeleteTextures(1, intArrayOf(freezeTextureId), 0)
+            freezeTextureId = 0
+        }
         if (recordEglSurface != EGL14.EGL_NO_SURFACE) {
             val eglDisplay = EGL14.eglGetCurrentDisplay()
             EGL14.eglDestroySurface(eglDisplay, recordEglSurface)
             recordEglSurface = EGL14.EGL_NO_SURFACE
         }
+    }
+
+    private fun initFreezeTexture() {
+        val textures = IntArray(1)
+        GLES20.glGenTextures(1, textures, 0)
+        freezeTextureId = textures[0]
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, freezeTextureId)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+        if (cameraWidth > 0 && cameraHeight > 0) {
+            GLES20.glTexImage2D(
+                GLES20.GL_TEXTURE_2D, 0, GLES20.GL_RGBA,
+                cameraWidth, cameraHeight, 0,
+                GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, null
+            )
+        }
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0)
+        Log.i(TAG, "Freeze-frame texture initialized: id=$freezeTextureId")
+    }
+
+    private fun updateFreezeTextureSize(width: Int, height: Int) {
+        if (freezeTextureId != 0 && width > 0 && height > 0) {
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, freezeTextureId)
+            GLES20.glTexImage2D(
+                GLES20.GL_TEXTURE_2D, 0, GLES20.GL_RGBA,
+                width, height, 0,
+                GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, null
+            )
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0)
+            Log.i(TAG, "Updated freeze texture size to ${width}x${height}")
+        }
+    }
+
+    private fun copyCurrentFrameToFreezeTexture() {
+        val currentFbo = ringBuffer.getCurrentFboId()
+        if (currentFbo != 0 && freezeTextureId != 0 && ringBuffer.bufferWidth > 0 && ringBuffer.bufferHeight > 0) {
+            GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, currentFbo)
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, freezeTextureId)
+            GLES20.glCopyTexSubImage2D(
+                GLES20.GL_TEXTURE_2D, 0,
+                0, 0, 0, 0,
+                ringBuffer.bufferWidth, ringBuffer.bufferHeight
+            )
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0)
+            GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0)
+            Log.i(TAG, "Direct GPU copy of current frame FBO $currentFbo to freeze texture $freezeTextureId")
+        }
+    }
+
+    /**
+     * Requests the GL thread to capture the current camera frame FBO directly on the GPU
+     * into the static freeze-frame reference texture.
+     */
+    fun captureFreezeFrame(callback: (() -> Unit)? = null) {
+        pendingFreezeCaptureCallback = callback
+        shouldCaptureFreezeFrame = true
+        surfaceView.requestRender()
+        Log.i(TAG, "Freeze-frame capture scheduled on GPU")
+    }
+
+    /**
+     * Clears the freeze-frame reference so the ring buffer delayed slot is used again.
+     */
+    fun clearFreezeFrame() {
+        hasFreezeFrame = false
+        shouldCaptureFreezeFrame = false
+        pendingFreezeCaptureCallback = null
+        surfaceView.requestRender()
+        Log.i(TAG, "Freeze-frame reference cleared")
     }
 }

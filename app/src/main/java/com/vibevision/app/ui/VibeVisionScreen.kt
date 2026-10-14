@@ -54,7 +54,9 @@ import com.vibevision.app.gl.GLVibeSurfaceView
 import com.vibevision.app.media.SnapshotManager
 import com.vibevision.app.media.VideoRecorder
 import com.vibevision.app.model.DiagnosticState
+import com.vibevision.app.model.DisplayMode
 import com.vibevision.app.ui.components.BottomCaptureBar
+import com.vibevision.app.ui.components.FftSpectrumPill
 import com.vibevision.app.ui.components.ReticleOverlay
 import com.vibevision.app.ui.components.SettingsBottomSheet
 import com.vibevision.app.ui.components.TopHudBar
@@ -132,11 +134,19 @@ fun VibeVisionScreen() {
     // Vibration Signal Analyzer instance
     val vibrationAnalyzer = remember {
         VibrationAnalyzer(
-            onDiagnosticUpdate = { vibrationIndex, isAnomaly, status ->
+            onDiagnosticUpdate = { vibrationIndex, isAnomaly, status, peakHz, rpm, magnitudes, fftTag, isAlias, zone, diagnosis, tag ->
                 diagnosticState = diagnosticState.copy(
                     vibrationIndex = vibrationIndex,
                     isAnomaly = isAnomaly,
-                    healthStatus = status
+                    healthStatus = status,
+                    peakFrequencyHz = peakHz,
+                    estimatedRpm = rpm,
+                    spectrumMagnitudes = magnitudes,
+                    fftStatusTag = fftTag,
+                    isAliasDetected = isAlias,
+                    severityZone = zone,
+                    severityDiagnosis = diagnosis,
+                    severityTag = tag
                 )
             }
         ).apply {
@@ -188,6 +198,7 @@ fun VibeVisionScreen() {
                     initRenderer(
                         onFpsUpdated = { fps ->
                             diagnosticState = diagnosticState.copy(fps = fps)
+                            vibrationAnalyzer.currentFps = fps
                         },
                         onSurfaceTextureReady = { st ->
                             cameraManager.onSurfaceTextureAvailable(st)
@@ -230,24 +241,37 @@ fun VibeVisionScreen() {
                 .navigationBarsPadding(),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // Top HUD Bar: Live FPS, mode tag, REC timer, Torch & Settings icon
-            TopHudBar(
-                state = diagnosticState,
-                onOpenSettings = {
-                    diagnosticState = diagnosticState.copy(isSettingsOpen = true)
-                },
-                onToggleTorch = {
-                    val isTorchOn = cameraManager.toggleTorch()
-                    diagnosticState = diagnosticState.copy(isTorchEnabled = isTorchOn)
-                },
-                onToggleReticle = {
-                    diagnosticState = diagnosticState.copy(showReticle = !diagnosticState.showReticle)
-                }
-            )
+            // Top Section: Top HUD Bar & Optical FFT Spectrum Pill
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                TopHudBar(
+                    state = diagnosticState,
+                    onOpenSettings = {
+                        diagnosticState = diagnosticState.copy(isSettingsOpen = true)
+                    },
+                    onToggleTorch = {
+                        val isTorchOn = cameraManager.toggleTorch()
+                        diagnosticState = diagnosticState.copy(isTorchEnabled = isTorchOn)
+                    },
+                    onToggleReticle = {
+                        diagnosticState = diagnosticState.copy(showReticle = !diagnosticState.showReticle)
+                    }
+                )
 
-            // Bottom Capture Controls Bar: Snapshot & Video Recording
+                // Industrial Telemetry Pill: FFT Spectrum & RPM Engine
+                FftSpectrumPill(
+                    state = diagnosticState,
+                    modifier = Modifier.padding(horizontal = 14.dp)
+                )
+            }
+
+            // Bottom Capture Controls Bar: Snapshot, Freeze (Mode 2) & Video Recording
             BottomCaptureBar(
                 isRecording = diagnosticState.isRecordingVideo,
+                displayMode = diagnosticState.displayMode,
+                isFrozen = diagnosticState.isFrozen,
                 onSnapshotClicked = {
                     glSurfaceViewRef?.requestSnapshot { bitmap ->
                         scope.launch {
@@ -263,16 +287,30 @@ fun VibeVisionScreen() {
                             diagnosticState = diagnosticState.copy(isRecordingVideo = false)
                         }
                     } else {
-                        // Start recording
-                        val surface = videoRecorder.start(cameraResolutionWidth, cameraResolutionHeight)
+                        // Start recording using viewport aspect ratio and resolution
+                        val viewWidth = glSurfaceViewRef?.viewportWidth?.takeIf { it > 0 } ?: 1080
+                        val viewHeight = glSurfaceViewRef?.viewportHeight?.takeIf { it > 0 } ?: 2408
+                        val surface = videoRecorder.start(viewWidth, viewHeight)
                         if (surface != null) {
                             glSurfaceViewRef?.startRecording(
                                 recorder = videoRecorder,
                                 surface = surface,
-                                width = cameraResolutionWidth,
-                                height = cameraResolutionHeight
+                                width = videoRecorder.configuredWidth,
+                                height = videoRecorder.configuredHeight
                             )
                             diagnosticState = diagnosticState.copy(isRecordingVideo = true)
+                        }
+                    }
+                },
+                onToggleFreeze = {
+                    if (diagnosticState.isFrozen) {
+                        // Unfreeze: clear the static reference, restore rolling comparison
+                        glSurfaceViewRef?.clearFreezeFrame()
+                        diagnosticState = diagnosticState.copy(isFrozen = false)
+                    } else {
+                        // Freeze: capture current live frame as static reference
+                        glSurfaceViewRef?.captureAndSetFreezeFrame {
+                            diagnosticState = diagnosticState.copy(isFrozen = true)
                         }
                     }
                 },
@@ -300,6 +338,10 @@ fun VibeVisionScreen() {
                     diagnosticState = diagnosticState.copy(isSettingsOpen = false)
                 },
                 onModeSelected = { newMode ->
+                    if (newMode != DisplayMode.FREEZE_FRAME && diagnosticState.isFrozen) {
+                        glSurfaceViewRef?.clearFreezeFrame()
+                        diagnosticState = diagnosticState.copy(isFrozen = false)
+                    }
                     diagnosticState = diagnosticState.copy(displayMode = newMode)
                     glSurfaceViewRef?.setDisplayMode(newMode)
                 },

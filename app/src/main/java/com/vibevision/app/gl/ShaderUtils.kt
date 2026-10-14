@@ -142,14 +142,33 @@ object ShaderUtils {
 
     /**
      * Vertex shader for final display quad rendering.
+     * Applies center-crop UV correction so a landscape camera texture fills a portrait
+     * viewport without stretching — matching the appearance of a normal phone camera.
+     * uTexAspect = textureWidth / textureHeight  (e.g. 1920/1080 ≈ 1.778 landscape)
+     * uViewAspect = viewportWidth / viewportHeight (e.g. 1080/2400 ≈ 0.45 portrait)
      */
     const val DISPLAY_VERTEX_SHADER = """
         attribute vec4 aPosition;
         attribute vec2 aTexCoord;
+        uniform float uTexAspect;
+        uniform float uViewAspect;
         varying vec2 vTexCoord;
         void main() {
             gl_Position = aPosition;
-            vTexCoord = aTexCoord;
+
+            // Center-crop: scale UV so the texture fills the viewport without distortion
+            float scaleU = 1.0;
+            float scaleV = 1.0;
+            if (uTexAspect > uViewAspect) {
+                // Texture is wider than viewport — crop left/right
+                scaleU = uViewAspect / uTexAspect;
+            } else {
+                // Texture is taller than viewport — crop top/bottom
+                scaleV = uTexAspect / uViewAspect;
+            }
+            // Re-center: offset by half the cropped amount
+            vec2 cropped = (aTexCoord - 0.5) * vec2(scaleU, scaleV) + 0.5;
+            vTexCoord = cropped;
         }
     """
 
@@ -157,7 +176,7 @@ object ShaderUtils {
      * Sub-Pixel Motion Amplifier fragment shader supporting 4 industrial visualization modes:
      * Mode 0: Differential Null Baseline (50% neutral gray baseline difference)
      * Mode 1: Spectral Turbo Heatmap (Color-mapped absolute motion gradients)
-     * Mode 2: Dynamic Edge Accent (Darkened raw background with glowing motion fringes)
+     * Mode 2: Freeze-Frame Glow (Pinned static baseline reference with screen-blend S-curve glow composited over live feed)
      * Mode 3: Raw Optical Feed (Unprocessed inspection view)
      */
     const val MOTION_AMPLIFIER_FRAGMENT_SHADER = """
@@ -189,6 +208,21 @@ object ShaderUtils {
             );
         }
 
+        // S-curve contrast/brightness applied per channel
+        // Approximates a photographic S-curve: lifts shadows, crushes midtones, preserves highlights
+        float sCurve(float x) {
+            x = clamp(x, 0.0, 1.0);
+            return x * x * (3.0 - 2.0 * x);
+        }
+        vec3 sCurve3(vec3 c) {
+            return vec3(sCurve(c.r), sCurve(c.g), sCurve(c.b));
+        }
+
+        // Screen composite blend: result = 1 - (1 - a) * (1 - b)
+        vec3 screenBlend(vec3 base, vec3 top) {
+            return 1.0 - (1.0 - base) * (1.0 - top);
+        }
+
         void main() {
             vec4 current = texture2D(uCurrentFrame, vTexCoord);
 
@@ -215,14 +249,36 @@ object ShaderUtils {
                 vec3 finalColor = heatColor + vec3(ambientLuma);
                 gl_FragColor = vec4(clamp(finalColor, 0.0, 1.0), 1.0);
             } else {
-                // Mode 2: Dynamic Edge Accent (Darkened raw background with glowing motion fringes)
-                vec3 absDiff = abs(current.rgb - delayed.rgb) * uGain;
-                float motionMag = dot(absDiff, vec3(0.299, 0.587, 0.114));
-                // High-luminescence electric cyan fringe glow on moving/vibrating edges
-                vec3 fringeColor = vec3(0.0, 0.898, 1.0) * clamp(motionMag * 2.5, 0.0, 1.0);
-                // Attenuated raw background for spatial orientation
-                vec3 composite = current.rgb * 0.25 + fringeColor;
-                gl_FragColor = vec4(clamp(composite, 0.0, 1.0), 1.0);
+                // -------------------------------------------------------
+                // Mode 2: Freeze-Frame Glow
+                // -------------------------------------------------------
+                // Base layer is the live video — looks completely normal.
+                // Only pixels that have changed since the freeze moment get a
+                // warm-white glow overlaid via screen blend.
+                // -------------------------------------------------------
+
+                // Per-channel absolute difference vs the frozen reference
+                vec3 delta = abs(current.rgb - delayed.rgb);
+
+                // Perceptual luminance of the motion signal
+                float motionMag = dot(delta, vec3(0.299, 0.587, 0.114));
+
+                // Noise floor: ignore tiny sensor-noise fluctuations (< ~3/255)
+                float noiseFloor = 0.012;
+                motionMag = max(motionMag - noiseFloor, 0.0) / (1.0 - noiseFloor);
+
+                // Apply gain and S-curve so even subtle movement glows clearly
+                motionMag = clamp(motionMag * uGain * 0.2, 0.0, 1.0);
+                float glowIntensity = sCurve(motionMag);
+
+                // Warm-white glow colour (slightly golden, not clinical blue)
+                vec3 glowColor = vec3(1.0, 0.97, 0.85) * glowIntensity;
+
+                // Screen-blend glow over the perfectly normal live video
+                // screen(a, b) = 1 - (1-a)*(1-b)
+                vec3 finalColor = screenBlend(current.rgb, glowColor);
+
+                gl_FragColor = vec4(finalColor, 1.0);
             }
         }
     """

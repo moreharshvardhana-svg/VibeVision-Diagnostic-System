@@ -19,15 +19,15 @@ fun ReticleOverlay(
     isAnomaly: Boolean,
     modifier: Modifier = Modifier
 ) {
-    val reticleColor = if (isAnomaly) Color(0x66FF1744) else Color(0x5500E5FF)
+    val reticleColor = if (isAnomaly) Color(0x99FF1744) else Color(0x8800E5FF)
 
     Canvas(modifier = modifier.fillMaxSize()) {
         val centerX = size.width / 2f
         val centerY = size.height / 2f
         val radius = size.minDimension * 0.22f
 
-        // Central crosshairs
-        val crosshairLength = 24f
+        // Central crosshairs (reinforced industrial thickness)
+        val crosshairLength = 26f
         val gap = 12f
 
         // Top line
@@ -35,28 +35,28 @@ fun ReticleOverlay(
             color = reticleColor,
             start = Offset(centerX, centerY - gap - crosshairLength),
             end = Offset(centerX, centerY - gap),
-            strokeWidth = 2f
+            strokeWidth = 6f
         )
         // Bottom line
         drawLine(
             color = reticleColor,
             start = Offset(centerX, centerY + gap),
             end = Offset(centerX, centerY + gap + crosshairLength),
-            strokeWidth = 2f
+            strokeWidth = 6f
         )
         // Left line
         drawLine(
             color = reticleColor,
             start = Offset(centerX - gap - crosshairLength, centerY),
             end = Offset(centerX - gap, centerY),
-            strokeWidth = 2f
+            strokeWidth = 6f
         )
         // Right line
         drawLine(
             color = reticleColor,
             start = Offset(centerX + gap, centerY),
             end = Offset(centerX + gap + crosshairLength, centerY),
-            strokeWidth = 2f
+            strokeWidth = 6f
         )
 
         // Concentric target rings (dashed)
@@ -65,16 +65,16 @@ fun ReticleOverlay(
             radius = radius,
             center = Offset(centerX, centerY),
             style = Stroke(
-                width = 1.5f,
+                width = 2.5f,
                 pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 10f), 0f)
             )
         )
 
         drawCircle(
-            color = reticleColor.copy(alpha = 0.2f),
+            color = reticleColor.copy(alpha = 0.35f),
             radius = radius * 0.5f,
             center = Offset(centerX, centerY),
-            style = Stroke(width = 1f)
+            style = Stroke(width = 1.8f)
         )
 
         // Corner optical framing brackets
@@ -86,19 +86,19 @@ fun ReticleOverlay(
         val bottom = size.height - margin - 220f
 
         // Top-Left bracket
-        drawLine(reticleColor, Offset(left, top), Offset(left + bracketSize, top), 2f)
-        drawLine(reticleColor, Offset(left, top), Offset(left, top + bracketSize), 2f)
+        drawLine(reticleColor, Offset(left, top), Offset(left + bracketSize, top), 4.5f)
+        drawLine(reticleColor, Offset(left, top), Offset(left, top + bracketSize), 4.5f)
 
         // Top-Right bracket
-        drawLine(reticleColor, Offset(right, top), Offset(right - bracketSize, top), 2f)
-        drawLine(reticleColor, Offset(right, top), Offset(right, top + bracketSize), 2f)
+        drawLine(reticleColor, Offset(right, top), Offset(right - bracketSize, top), 4.5f)
+        drawLine(reticleColor, Offset(right, top), Offset(right, top + bracketSize), 4.5f)
 
         // Bottom-Left bracket
-        drawLine(reticleColor, Offset(left, bottom), Offset(left + bracketSize, bottom), 2f)
-        drawLine(reticleColor, Offset(left, bottom), Offset(left, bottom - bracketSize), 2f)
+        drawLine(reticleColor, Offset(left, bottom), Offset(left + bracketSize, bottom), 4.5f)
+        drawLine(reticleColor, Offset(left, bottom), Offset(left, bottom - bracketSize), 4.5f)
 
         // Bottom-Right bracket
-        drawLine(reticleColor, Offset(right, bottom), Offset(right - bracketSize, bottom), 2f)
-        drawLine(reticleColor, Offset(right, bottom), Offset(right, bottom - bracketSize), 2f)
+        drawLine(reticleColor, Offset(right, bottom), Offset(right - bracketSize, bottom), 4.5f)
+        drawLine(reticleColor, Offset(right, bottom), Offset(right, bottom - bracketSize), 4.5f)
     }
 }

@@ -23,8 +23,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.RestartAlt
-import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.Icon
@@ -40,26 +40,29 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.vibevision.app.model.DisplayMode
 import com.vibevision.app.ui.theme.VibeBorder
 import com.vibevision.app.ui.theme.VibeCyan
 import com.vibevision.app.ui.theme.VibeRed
 import com.vibevision.app.ui.theme.VibeSurface
-import com.vibevision.app.ui.theme.VibeSurfaceElevated
 import com.vibevision.app.ui.theme.VibeTextMuted
-import com.vibevision.app.ui.theme.VibeTextPrimary
 import com.vibevision.app.ui.theme.VibeTextSecondary
 
 /**
  * Minimalist bottom capture bar:
  * - High-speed processed frame snapshot button
+ * - Freeze / Unfreeze button (only in FREEZE_FRAME mode)
  * - Video record toggle button
  * - Null baseline zero-noise calibration pill
  */
 @Composable
 fun BottomCaptureBar(
     isRecording: Boolean,
+    displayMode: DisplayMode,
+    isFrozen: Boolean,
     onSnapshotClicked: () -> Unit,
     onToggleRecording: () -> Unit,
+    onToggleFreeze: () -> Unit,
     onCalibrateBaseline: () -> Unit,
     onResetBaseline: () -> Unit,
     isCalibrated: Boolean,
@@ -76,12 +79,15 @@ fun BottomCaptureBar(
         label = "pulseAlpha"
     )
 
+    val isFreezeMode = displayMode == DisplayMode.FREEZE_FRAME
+
     Column(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 20.dp, vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(14.dp)
+
     ) {
         // Zero Ambient Noise Baseline Button (Clean, compact industrial pill)
         Row(
@@ -165,6 +171,59 @@ fun BottomCaptureBar(
                         modifier = Modifier
                             .size(24.dp)
                             .align(Alignment.Center)
+                    )
+                }
+            }
+
+            // Freeze / Unfreeze Button — only shown in FREEZE_FRAME mode
+            if (isFreezeMode) {
+                val freezeColor = if (isFrozen) VibeCyan else Color(0xFFB388FF)
+                val freezeBorderAlpha = if (isFrozen) pulseAlpha else 1.0f
+
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(64.dp)
+                            .clip(CircleShape)
+                            .background(VibeSurface.copy(alpha = 0.85f))
+                            .border(
+                                2.dp,
+                                freezeColor.copy(alpha = if (isFrozen) pulseAlpha else 1f),
+                                CircleShape
+                            )
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) { onToggleFreeze() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(50.dp)
+                                .clip(CircleShape)
+                                .background(freezeColor.copy(alpha = if (isFrozen) 0.18f else 0.22f))
+                                .border(1.dp, freezeColor.copy(alpha = 0.6f), CircleShape)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Pause,
+                                contentDescription = if (isFrozen) "Unfreeze" else "Freeze Frame",
+                                tint = freezeColor,
+                                modifier = Modifier
+                                    .size(26.dp)
+                                    .align(Alignment.Center)
+                            )
+                        }
+                    }
+                    Text(
+                        text = if (isFrozen) "FROZEN" else "FREEZE",
+                        color = freezeColor,
+                        fontSize = 9.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp
                     )
                 }
             }

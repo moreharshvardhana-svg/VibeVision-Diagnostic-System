@@ -151,7 +151,7 @@ fun TopHudBar(
         // Right Side: Quick Action Icons & Gear / Settings Button
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             // Reticle Toggle
             IconButton(
@@ -166,7 +166,7 @@ fun TopHudBar(
                     imageVector = Icons.Default.CenterFocusStrong,
                     contentDescription = "Toggle Reticle",
                     tint = if (state.showReticle) VibeCyan else VibeTextMuted,
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(20.dp)
                 )
             }
 
@@ -184,7 +184,7 @@ fun TopHudBar(
                         imageVector = Icons.Default.FlashOn,
                         contentDescription = "Toggle Torch",
                         tint = if (state.isTorchEnabled) VibeAmber else VibeTextMuted,
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
@@ -202,7 +202,7 @@ fun TopHudBar(
                     imageVector = Icons.Default.Settings,
                     contentDescription = "Settings",
                     tint = VibeCyan,
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(20.dp)
                 )
             }
         }

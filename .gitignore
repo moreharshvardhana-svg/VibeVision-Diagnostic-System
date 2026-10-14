@@ -14,3 +14,7 @@ captures
 .externalNativeBuild
 .cxx
 local.properties
+*.keystore
+*.jks
+release.keystore
+app/release/
