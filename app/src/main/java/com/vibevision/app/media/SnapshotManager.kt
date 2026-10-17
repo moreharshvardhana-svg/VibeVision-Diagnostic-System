@@ -9,6 +9,7 @@ import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
 import android.widget.Toast
+import com.vibevision.app.journal.ErrorJournal
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -85,7 +86,7 @@ object SnapshotManager {
                     onComplete(savedUri)
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error saving processed snapshot", e)
+                ErrorJournal.e(TAG, "Error saving processed snapshot: ${e.message}", e)
                 withContext(Dispatchers.Main) {
                     Toast.makeText(context, "Snapshot error: ${e.message}", Toast.LENGTH_SHORT).show()
                     onComplete(null)

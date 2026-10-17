@@ -18,3 +18,4 @@ local.properties
 *.jks
 release.keystore
 app/release/
+.idea/

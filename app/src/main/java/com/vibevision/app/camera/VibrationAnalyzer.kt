@@ -2,6 +2,7 @@ package com.vibevision.app.camera
 
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
+import com.vibevision.app.journal.ErrorJournal
 import com.vibevision.app.model.DiagnosticState
 import kotlin.math.abs
 import kotlin.math.sqrt
@@ -171,7 +172,7 @@ class VibrationAnalyzer(
             )
 
         } catch (e: Exception) {
-            e.printStackTrace()
+            ErrorJournal.e("VibrationAnalyzer", "Error analyzing frame buffer: ${e.message}", e)
         } finally {
             image.close()
         }

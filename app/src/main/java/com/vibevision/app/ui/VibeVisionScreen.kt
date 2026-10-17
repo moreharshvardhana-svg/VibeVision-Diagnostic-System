@@ -56,6 +56,7 @@ import com.vibevision.app.media.VideoRecorder
 import com.vibevision.app.model.DiagnosticState
 import com.vibevision.app.model.DisplayMode
 import com.vibevision.app.ui.components.BottomCaptureBar
+import com.vibevision.app.ui.components.ErrorJournalViewerDialog
 import com.vibevision.app.ui.components.FftSpectrumPill
 import com.vibevision.app.ui.components.ReticleOverlay
 import com.vibevision.app.ui.components.SettingsBottomSheet
@@ -358,6 +359,23 @@ fun VibeVisionScreen() {
                 onTarget60FpsToggled = { enabled ->
                     diagnosticState = diagnosticState.copy(target60Fps = enabled)
                     cameraManager.setTarget60FpsPreference(enabled)
+                },
+                onOpenErrorJournal = {
+                    diagnosticState = diagnosticState.copy(
+                        isSettingsOpen = false,
+                        isErrorJournalOpen = true
+                    )
+                }
+            )
+        }
+
+        // -------------------------------------------------------------
+        // 5. System Error Log Journal Terminal Dialog
+        // -------------------------------------------------------------
+        if (diagnosticState.isErrorJournalOpen) {
+            ErrorJournalViewerDialog(
+                onDismissRequest = {
+                    diagnosticState = diagnosticState.copy(isErrorJournalOpen = false)
                 }
             )
         }

@@ -13,6 +13,7 @@ import android.provider.MediaStore
 import android.util.Log
 import android.view.Surface
 import android.widget.Toast
+import com.vibevision.app.journal.ErrorJournal
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -125,7 +126,7 @@ class VideoRecorder(private val context: Context) {
             return surface
 
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to start VideoRecorder", e)
+            ErrorJournal.e(TAG, "Failed to start VideoRecorder: ${e.message}", e)
             stop(null)
             return null
         }
@@ -143,7 +144,7 @@ class VideoRecorder(private val context: Context) {
             try {
                 codec.signalEndOfInputStream()
             } catch (e: Exception) {
-                Log.e(TAG, "Error signaling EOS", e)
+                ErrorJournal.e(TAG, "Error signaling EOS to MediaCodec: ${e.message}", e)
             }
         }
 
@@ -209,7 +210,7 @@ class VideoRecorder(private val context: Context) {
                     try {
                         mediaMuxer?.stop()
                     } catch (e: Exception) {
-                        Log.e(TAG, "Muxer stop error", e)
+                        ErrorJournal.e(TAG, "Muxer stop error: ${e.message}", e)
                     }
                 }
                 mediaMuxer?.release()
@@ -233,7 +234,7 @@ class VideoRecorder(private val context: Context) {
                 }
 
             } catch (e: Exception) {
-                Log.e(TAG, "Error stopping recorder", e)
+                ErrorJournal.e(TAG, "Error stopping recorder: ${e.message}", e)
                 withContext(Dispatchers.Main) {
                     Toast.makeText(context, "Recording error: ${e.message}", Toast.LENGTH_SHORT).show()
                     onSaved?.invoke(null)
@@ -290,7 +291,7 @@ class VideoRecorder(private val context: Context) {
                 return@withContext context.contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "MediaStore video save error", e)
+            ErrorJournal.e(TAG, "MediaStore video save error: ${e.message}", e)
         }
         null
     }

@@ -2,6 +2,7 @@ package com.vibevision.app.gl
 
 import android.opengl.GLES20
 import android.util.Log
+import com.vibevision.app.journal.ErrorJournal
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
@@ -68,6 +69,7 @@ object ShaderUtils {
         if (compiled[0] == 0) {
             val infoLog = GLES20.glGetShaderInfoLog(shader)
             GLES20.glDeleteShader(shader)
+            ErrorJournal.e(TAG, "Shader compilation failed (type $type): $infoLog")
             throw RuntimeException("Could not compile shader $type:\n$infoLog\nSource:\n$shaderCode")
         }
 
@@ -83,6 +85,7 @@ object ShaderUtils {
 
         val program = GLES20.glCreateProgram()
         if (program == 0) {
+            ErrorJournal.e(TAG, "Could not create GL program")
             throw RuntimeException("Could not create GL program")
         }
 
@@ -95,6 +98,7 @@ object ShaderUtils {
         if (linkStatus[0] != GLES20.GL_TRUE) {
             val infoLog = GLES20.glGetProgramInfoLog(program)
             GLES20.glDeleteProgram(program)
+            ErrorJournal.e(TAG, "Program linking failed: $infoLog")
             throw RuntimeException("Could not link program:\n$infoLog")
         }
 
@@ -107,7 +111,7 @@ object ShaderUtils {
     fun checkGlError(op: String) {
         val error = GLES20.glGetError()
         if (error != GLES20.GL_NO_ERROR) {
-            Log.e(TAG, "$op: glError 0x${Integer.toHexString(error)}")
+            ErrorJournal.e(TAG, "$op: glError 0x${Integer.toHexString(error)}")
         }
     }
 

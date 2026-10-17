@@ -2,6 +2,7 @@ package com.vibevision.app.gl
 
 import android.opengl.GLES20
 import android.util.Log
+import com.vibevision.app.journal.ErrorJournal
 
 /**
  * Manages a ring buffer of OpenGL ES 2.0 Framebuffer Objects (FBOs) and 2D textures
@@ -68,7 +69,7 @@ class FboRingBuffer(private val capacity: Int = 12) {
 
             val status = GLES20.glCheckFramebufferStatus(GLES20.GL_FRAMEBUFFER)
             if (status != GLES20.GL_FRAMEBUFFER_COMPLETE) {
-                Log.e(TAG, "FBO $i incomplete: status 0x${Integer.toHexString(status)}")
+                ErrorJournal.e(TAG, "FBO $i incomplete: status 0x${Integer.toHexString(status)}")
             }
         }
 

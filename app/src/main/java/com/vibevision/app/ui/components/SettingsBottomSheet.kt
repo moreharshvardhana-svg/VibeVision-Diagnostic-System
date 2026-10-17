@@ -18,15 +18,18 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Slider
@@ -36,6 +39,9 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import com.vibevision.app.journal.ErrorJournal
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -50,6 +56,8 @@ import com.vibevision.app.ui.theme.VibeBackground
 import com.vibevision.app.ui.theme.VibeBorder
 import com.vibevision.app.ui.theme.VibeCyan
 import com.vibevision.app.ui.theme.VibeGreen
+import com.vibevision.app.ui.theme.VibeRed
+import com.vibevision.app.ui.theme.VibeRedGlow
 import com.vibevision.app.ui.theme.VibeSurface
 import com.vibevision.app.ui.theme.VibeSurfaceElevated
 import com.vibevision.app.ui.theme.VibeTextMuted
@@ -70,7 +78,8 @@ fun SettingsBottomSheet(
     onModeSelected: (DisplayMode) -> Unit,
     onGainChanged: (Float) -> Unit,
     onFrameDelayChanged: (Int) -> Unit,
-    onTarget60FpsToggled: (Boolean) -> Unit
+    onTarget60FpsToggled: (Boolean) -> Unit,
+    onOpenErrorJournal: () -> Unit = {}
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -410,7 +419,139 @@ fun SettingsBottomSheet(
             HorizontalDivider(color = VibeBorder)
 
             // =============================================================
-            // SECTION B: ABOUT VIBEVISION
+            // SECTION B: SYSTEM ERROR LOG JOURNAL
+            // =============================================================
+            val errorCount by ErrorJournal.errorCount.collectAsState()
+            val warnCount by ErrorJournal.warnCount.collectAsState()
+            val totalCount by ErrorJournal.totalCount.collectAsState()
+            val lastErrorTime by ErrorJournal.lastErrorTime.collectAsState()
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.BugReport,
+                    contentDescription = null,
+                    tint = if (errorCount > 0) VibeRed else VibeCyan,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "SECTION B: SYSTEM ERROR JOURNAL",
+                    color = if (errorCount > 0) VibeRed else VibeCyan,
+                    fontSize = 13.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.0.sp
+                )
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(VibeSurface)
+                    .border(
+                        1.dp,
+                        if (errorCount > 0) VibeRed.copy(alpha = 0.5f) else VibeBorder,
+                        RoundedCornerShape(10.dp)
+                    )
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Status indicator row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(if (errorCount > 0) VibeRed else if (warnCount > 0) VibeAmber else VibeGreen)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (errorCount > 0) "FAULT DETECTED ($errorCount ERRORS)"
+                                   else if (warnCount > 0) "WARNINGS RECORDED ($warnCount WARNS)"
+                                   else "ALL SUBSYSTEMS NOMINAL",
+                            color = if (errorCount > 0) VibeRed else if (warnCount > 0) VibeAmber else VibeGreen,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    Text(
+                        text = "TOTAL: $totalCount",
+                        color = VibeTextMuted,
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+
+                if (!lastErrorTime.isNullOrBlank()) {
+                    Text(
+                        text = "Last Fault Recorded: $lastErrorTime",
+                        color = VibeTextSecondary,
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+
+                // Action Buttons: View Journal, Simulate Test Error, Clear
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onOpenErrorJournal,
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = VibeCyan),
+                        modifier = Modifier.weight(1.5f),
+                        shape = RoundedCornerShape(6.dp)
+                    ) {
+                        Text(
+                            text = "VIEW JOURNAL",
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    OutlinedButton(
+                        onClick = { ErrorJournal.simulateTestError() },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = VibeAmber),
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(6.dp)
+                    ) {
+                        Text(
+                            text = "TEST",
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    OutlinedButton(
+                        onClick = { ErrorJournal.clearJournal() },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = VibeRed),
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(6.dp)
+                    ) {
+                        Text(
+                            text = "CLEAR",
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+
+            HorizontalDivider(color = VibeBorder)
+
+            // =============================================================
+            // SECTION C: ABOUT VIBEVISION
             // =============================================================
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
@@ -421,7 +562,7 @@ fun SettingsBottomSheet(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "SECTION B: ABOUT VIBEVISION",
+                    text = "SECTION C: ABOUT VIBEVISION",
                     color = VibeAmber,
                     fontSize = 13.sp,
                     fontFamily = FontFamily.Monospace,

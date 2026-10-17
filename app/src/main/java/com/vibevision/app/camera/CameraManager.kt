@@ -18,6 +18,7 @@ import androidx.camera.core.SurfaceOrientedMeteringPointFactory
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
+import com.vibevision.app.journal.ErrorJournal
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -59,7 +60,7 @@ class CameraManager(
                 cameraProvider = cameraProviderFuture.get()
                 bindCamera()
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to get ProcessCameraProvider", e)
+                ErrorJournal.e(TAG, "Failed to get ProcessCameraProvider: ${e.message}", e)
             }
         }, ContextCompat.getMainExecutor(context))
     }
@@ -165,7 +166,7 @@ class CameraManager(
             }
 
         } catch (e: Exception) {
-            Log.e(TAG, "Camera binding error", e)
+            ErrorJournal.e(TAG, "Camera binding error: ${e.message}", e)
         }
     }
 
@@ -195,7 +196,7 @@ class CameraManager(
             cameraProvider?.unbindAll()
             analysisExecutor.shutdown()
         } catch (e: Exception) {
-            Log.e(TAG, "Shutdown error", e)
+            ErrorJournal.e(TAG, "Camera shutdown error: ${e.message}", e)
         }
     }
 }

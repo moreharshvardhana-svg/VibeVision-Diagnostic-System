@@ -5,6 +5,7 @@ import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import com.vibevision.app.journal.ErrorJournal
 import com.vibevision.app.ui.VibeVisionScreen
 import com.vibevision.app.ui.theme.VibeVisionTheme
 
@@ -15,6 +16,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Ensure Error Log Journal and Uncaught Exception Handler are active
+        ErrorJournal.initialize(applicationContext)
 
         // Enable edge-to-edge layout for immersive optical viewfinder
         enableEdgeToEdge()

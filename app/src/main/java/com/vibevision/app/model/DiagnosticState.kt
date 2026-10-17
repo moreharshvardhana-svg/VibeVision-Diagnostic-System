@@ -29,7 +29,8 @@ data class DiagnosticState(
     val isAliasDetected: Boolean = false,
     val severityZone: VibrationSeverityZone = VibrationSeverityZone.IDLE,
     val severityDiagnosis: String = "STATIC / BASELINE",
-    val severityTag: String = "IDLE"
+    val severityTag: String = "IDLE",
+    val isErrorJournalOpen: Boolean = false
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -60,6 +61,7 @@ data class DiagnosticState(
         if (severityZone != other.severityZone) return false
         if (severityDiagnosis != other.severityDiagnosis) return false
         if (severityTag != other.severityTag) return false
+        if (isErrorJournalOpen != other.isErrorJournalOpen) return false
 
         return true
     }
@@ -89,6 +91,7 @@ data class DiagnosticState(
         result = 31 * result + severityZone.hashCode()
         result = 31 * result + severityDiagnosis.hashCode()
         result = 31 * result + severityTag.hashCode()
+        result = 31 * result + isErrorJournalOpen.hashCode()
         return result
     }
     val effectiveVibrationIndex: Float

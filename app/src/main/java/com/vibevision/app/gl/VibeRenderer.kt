@@ -12,6 +12,7 @@ import android.opengl.GLES20
 import android.opengl.GLSurfaceView
 import android.util.Log
 import android.view.Surface
+import com.vibevision.app.journal.ErrorJournal
 import com.vibevision.app.media.VideoRecorder
 import com.vibevision.app.model.DiagnosticState
 import com.vibevision.app.model.DisplayMode
@@ -317,7 +318,7 @@ class VibeRenderer(
 
             callback(finalBitmap)
         } catch (e: Exception) {
-            Log.e(TAG, "Error in glReadPixels snapshot", e)
+            ErrorJournal.e(TAG, "Error in glReadPixels snapshot: ${e.message}", e)
         }
     }
 
@@ -349,7 +350,7 @@ class VibeRenderer(
                         eglDisplay, configs[0], surface, surfaceAttribs, 0
                     )
                 } catch (e: Exception) {
-                    Log.e(TAG, "Failed to create record EGL surface", e)
+                    ErrorJournal.e(TAG, "Failed to create record EGL surface: ${e.message}", e)
                 }
             }
         }
@@ -374,7 +375,7 @@ class VibeRenderer(
 
                 recorder.drainEncoder(false)
             } catch (e: Exception) {
-                Log.e(TAG, "Error rendering to encoder surface", e)
+                ErrorJournal.e(TAG, "Error rendering to encoder surface: ${e.message}", e)
             }
         }
 

@@ -26,6 +26,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -34,6 +35,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.vibevision.app.journal.ErrorJournal
 import com.vibevision.app.model.DiagnosticState
 import com.vibevision.app.ui.theme.VibeAmber
 import com.vibevision.app.ui.theme.VibeBackground
@@ -72,6 +74,9 @@ fun TopHudBar(
         ),
         label = "recAlpha"
     )
+
+    val errorCount by ErrorJournal.errorCount.collectAsState()
+    val hasErrors = errorCount > 0
 
     Row(
         modifier = modifier
@@ -189,21 +194,37 @@ fun TopHudBar(
                 }
             }
 
-            // Gear / Settings Icon Button
-            IconButton(
-                onClick = onOpenSettings,
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(CircleShape)
-                    .background(VibeSurface.copy(alpha = 0.95f))
-                    .border(1.dp, VibeCyan.copy(alpha = 0.7f), CircleShape)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Settings,
-                    contentDescription = "Settings",
-                    tint = VibeCyan,
-                    modifier = Modifier.size(20.dp)
-                )
+            // Gear / Settings Icon Button with Error Badge Dot if errors logged
+            Box(contentAlignment = Alignment.TopEnd) {
+                IconButton(
+                    onClick = onOpenSettings,
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(VibeSurface.copy(alpha = 0.95f))
+                        .border(
+                            1.dp,
+                            if (hasErrors) VibeRed.copy(alpha = recAlpha) else VibeCyan.copy(alpha = 0.7f),
+                            CircleShape
+                        )
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = "Settings",
+                        tint = if (hasErrors) VibeAmber else VibeCyan,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                if (hasErrors) {
+                    Box(
+                        modifier = Modifier
+                            .size(9.dp)
+                            .clip(CircleShape)
+                            .background(VibeRed.copy(alpha = recAlpha))
+                            .border(1.dp, VibeBackground, CircleShape)
+                    )
+                }
             }
         }
     }
